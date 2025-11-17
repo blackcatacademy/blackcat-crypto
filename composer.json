@@ -1,0 +1,26 @@
+{
+    "name": "blackcat/crypto",
+    "description": "Centralized cryptography services for BlackCat platform (AEAD, HMAC, KMS wrapping, rotations)",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "ext-sodium": "*",
+        "psr/log": "^3.0"
+    },
+    "bin": [
+        "bin/crypto"
+    ],
+    "autoload": {
+        "psr-4": {
+            "BlackCat\\Crypto\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "BlackCat\\Crypto\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
