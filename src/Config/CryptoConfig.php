@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\Config;
 
-use Closure;
 use BlackCat\Crypto\Queue\FileWrapQueue;
 use BlackCat\Crypto\Queue\InMemoryWrapQueue;
 use Closure;
@@ -18,6 +17,7 @@ final class CryptoConfig
         private readonly string $aeadDriver = 'xchacha',
         private readonly ?Closure $aeadFactory = null,
         private readonly ?Closure $wrapQueueFactory = null,
+        private readonly ?string $manifestPath = null,
     ) {}
 
     public static function fromEnv(array $env = []): self
@@ -40,16 +40,28 @@ final class CryptoConfig
                 return new FileWrapQueue($path);
             };
         }
+        $manifestPath = $env['BLACKCAT_CRYPTO_MANIFEST'] ?? null;
+        $manifestSlots = [];
+        $manifestRotation = [];
+        if ($manifestPath && is_file($manifestPath)) {
+            [$manifestSlots, $manifestRotation] = self::loadManifest($manifestPath);
+        }
+
+        if (!empty($manifestRotation)) {
+            $rotation = array_replace($manifestRotation, $rotation);
+        }
+
         return new self(
             keySources: [
                 ['type' => 'filesystem', 'path' => $keysDir],
                 ['type' => 'env', 'prefix' => 'BC_KEY_'],
             ],
-            slots: [],
+            slots: $manifestSlots,
             kms: $kms,
             rotationPolicies: $rotation,
             aeadDriver: in_array($driver, ['xchacha','hybrid'], true) ? $driver : 'xchacha',
             wrapQueueFactory: $queueFactory,
+            manifestPath: $manifestPath && is_file($manifestPath) ? $manifestPath : null,
         );
     }
 
@@ -92,5 +104,35 @@ final class CryptoConfig
     public function wrapQueueFactory(): ?Closure
     {
         return $this->wrapQueueFactory;
+    }
+
+    public function manifestPath(): ?string
+    {
+        return $this->manifestPath;
+    }
+
+    /**
+     * @return array{0:array<string,mixed>,1:array<string,mixed>}
+     */
+    private static function loadManifest(string $path): array
+    {
+        $json = file_get_contents($path);
+        if ($json === false) {
+            throw new \RuntimeException('Cannot read manifest ' . $path);
+        }
+        $data = json_decode($json, true);
+        if (!is_array($data)) {
+            throw new \RuntimeException('Manifest ' . $path . ' is not valid JSON');
+        }
+
+        $slots = $data['slots'] ?? [];
+        $rotation = $data['rotation'] ?? [];
+        if (!is_array($slots)) {
+            $slots = [];
+        }
+        if (!is_array($rotation)) {
+            $rotation = [];
+        }
+        return [$slots, $rotation];
     }
 }

@@ -12,4 +12,7 @@ interface KeyResolverInterface
 
     /** @return list<KeyMaterial> */
     public function kmsBindings(KeySlot $slot): array;
+
+    /** @return list<KeyMaterial> */
+    public function all(KeySlot $slot): array;
 }

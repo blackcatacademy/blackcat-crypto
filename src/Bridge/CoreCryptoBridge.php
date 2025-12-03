@@ -1,0 +1,217 @@
+<?php
+declare(strict_types=1);
+
+namespace BlackCat\Crypto\Bridge;
+
+use BlackCat\Crypto\Config\CryptoConfig;
+use BlackCat\Crypto\CryptoManager;
+use BlackCat\Crypto\Support\Payload;
+use BlackCat\Crypto\Keyring\KeyMaterial;
+use Psr\Log\LoggerInterface;
+
+/**
+ * Bridge pro napojení legacy `blackcat-core` tříd (Crypto/FileVault) na novou
+ * infrastrukturu `blackcat-crypto`. Stará API tak mohou používat stejné klíče,
+ * AEAD a HMAC sloty jako zbytek platformy, aniž by bylo nutné držet dvě různé
+ * implementace šifrování.
+ */
+final class CoreCryptoBridge
+{
+    private const VERSION = 2;
+    private const DEFAULT_PREFIX = 'core';
+
+    private static ?CryptoManager $manager = null;
+    private static array $options = [
+        'context_prefix' => self::DEFAULT_PREFIX,
+        'wrap_queue' => 'memory',
+    ];
+
+    /**
+     * Nastav konfiguraci bridge (např. umístění klíčů, logger, KMS endpoints).
+     * Volání je idempotentní — při nové konfiguraci dojde k reinitu managera.
+     *
+     * {@see Crypto::initFromKeyManager()} musí předat alespoň `keys_dir`.
+     */
+    public static function configure(array $options): void
+    {
+        self::$options = array_replace(self::$options, $options);
+        self::$manager = null;
+    }
+
+    public static function flush(): void
+    {
+        self::$manager = null;
+    }
+
+    public static function encryptBinary(string $slot, string $plaintext): string
+    {
+        $payload = self::manager()->encryptLocal(self::slot($slot), $plaintext);
+        return self::packPayload($payload);
+    }
+
+    public static function decryptBinary(string $slot, string $data): ?string
+    {
+        $decoded = self::unpackPayload($data);
+        $manager = self::manager();
+
+        if ($decoded['keyId'] !== null) {
+            $payload = new Payload($decoded['ciphertext'], $decoded['nonce'], $decoded['keyId']);
+            return $manager->decryptLocal(self::slot($slot), $payload);
+        }
+
+        return $manager->decryptLocalWithAnyKey(self::slot($slot), $decoded['nonce'], $decoded['ciphertext']);
+    }
+
+    public static function hmac(string $slot, string $message): string
+    {
+        return self::manager()->hmac(self::slot($slot), $message);
+    }
+
+    public static function verifyHmac(string $slot, string $message, string $signature): bool
+    {
+        return self::manager()->verifyHmac(self::slot($slot), $message, $signature);
+    }
+
+    /**
+     * @return array{id:string,bytes:string,slot:string}
+     */
+    public static function deriveKeyMaterial(string $slot, ?string $forceKeyId = null): array
+    {
+        $material = self::manager()->keyMaterial(self::slot($slot), $forceKeyId);
+        return [
+            'id' => $material->id,
+            'bytes' => $material->bytes,
+            'slot' => $material->slot,
+        ];
+    }
+
+    /**
+     * @return list<array{id:string,bytes:string,slot:string}>
+     */
+    public static function listKeyMaterial(string $slot): array
+    {
+        $list = self::manager()->allKeyMaterial(self::slot($slot));
+        return array_map(static fn(KeyMaterial $mat) => [
+            'id' => $mat->id,
+            'bytes' => $mat->bytes,
+            'slot' => $mat->slot,
+        ], $list);
+    }
+
+    public static function boot(): CryptoManager
+    {
+        return self::manager();
+    }
+
+    private static function manager(): CryptoManager
+    {
+        if (self::$manager === null) {
+            $config = CryptoConfig::fromEnv(self::buildEnv());
+            $logger = self::$options['logger'] ?? null;
+            if ($logger !== null && !$logger instanceof LoggerInterface) {
+                throw new \InvalidArgumentException('logger must implement LoggerInterface');
+            }
+            self::$manager = CryptoManager::boot($config, $logger);
+        }
+
+        return self::$manager;
+    }
+
+    private static function slot(string $name): string
+    {
+        $prefix = rtrim((string)(self::$options['context_prefix'] ?? self::DEFAULT_PREFIX), '.');
+        return $prefix . '.' . ltrim($name, '.');
+    }
+
+    /**
+     * Připrav env pole pro CryptoConfig::fromEnv.
+     *
+     * @return array<string,string>
+     */
+    private static function buildEnv(): array
+    {
+        $env = [
+            'BLACKCAT_KEYS_DIR' => (string)(self::$options['keys_dir'] ?? ''),
+            'BLACKCAT_KMS_ENDPOINTS' => json_encode(self::$options['kms'] ?? []),
+            'BLACKCAT_CRYPTO_ROTATION' => json_encode(self::$options['rotation'] ?? []),
+            'BLACKCAT_CRYPTO_AEAD' => (string)(self::$options['aead'] ?? 'xchacha'),
+            'BLACKCAT_CRYPTO_WRAP_QUEUE' => (string)(self::$options['wrap_queue'] ?? ''),
+            'BLACKCAT_CRYPTO_MANIFEST' => (string)(self::$options['manifest'] ?? ''),
+        ];
+
+        return $env;
+    }
+
+    private static function packPayload(Payload $payload): string
+    {
+        $keyId = $payload->keyId;
+        $keyLen = strlen($keyId);
+        if ($keyLen > 255) {
+            $keyId = substr($keyId, 0, 255);
+            $keyLen = 255;
+        }
+
+        $nonce = $payload->nonce;
+        $nonceLen = strlen($nonce);
+        if ($nonceLen > 255) {
+            throw new \RuntimeException('Nonce length exceeds 255 bytes');
+        }
+
+        return chr(self::VERSION)
+            . chr($keyLen)
+            . $keyId
+            . chr($nonceLen)
+            . $nonce
+            . $payload->ciphertext;
+    }
+
+    /**
+     * @return array{version:int,keyId:?string,nonce:string,ciphertext:string}
+     */
+    private static function unpackPayload(string $data): array
+    {
+        $ptr = 0;
+        $len = strlen($data);
+        if ($len < 2) {
+            throw new \InvalidArgumentException('Payload too short');
+        }
+
+        $version = ord($data[$ptr++]);
+        $keyId = null;
+        if ($version >= self::VERSION) {
+            if ($ptr >= $len) {
+                throw new \InvalidArgumentException('Payload missing key id length');
+            }
+            $keyLen = ord($data[$ptr++]);
+            if ($ptr + $keyLen > $len) {
+                throw new \InvalidArgumentException('Payload key id out of bounds');
+            }
+            $keyId = $keyLen > 0 ? substr($data, $ptr, $keyLen) : null;
+            $ptr += $keyLen;
+        }
+
+        if ($ptr >= $len) {
+            throw new \InvalidArgumentException('Payload missing nonce length');
+        }
+        $nonceLen = ord($data[$ptr++]);
+        if ($nonceLen < 1 || $nonceLen > 255) {
+            throw new \InvalidArgumentException('Invalid nonce length');
+        }
+        if ($ptr + $nonceLen > $len) {
+            throw new \InvalidArgumentException('Payload nonce out of bounds');
+        }
+        $nonce = substr($data, $ptr, $nonceLen);
+        $ptr += $nonceLen;
+        $ciphertext = substr($data, $ptr);
+        if ($ciphertext === false || $ciphertext === '') {
+            throw new \InvalidArgumentException('Payload missing ciphertext');
+        }
+
+        return [
+            'version' => $version,
+            'keyId' => $keyId,
+            'nonce' => $nonce,
+            'ciphertext' => $ciphertext,
+        ];
+    }
+}

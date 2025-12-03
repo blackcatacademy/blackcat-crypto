@@ -11,6 +11,13 @@ use BlackCat\Crypto\CLI\Command\WrapQueueCommand;
 use BlackCat\Crypto\CLI\Command\MetricsExportCommand;
 use BlackCat\Crypto\CLI\Command\TelemetrySseCommand;
 use BlackCat\Crypto\CLI\Command\KmsWatchdogCommand;
+use BlackCat\Crypto\CLI\Command\ManifestShowCommand;
+use BlackCat\Crypto\CLI\Command\ManifestDiffCommand;
+use BlackCat\Crypto\CLI\Command\VaultMigrateCommand;
+use BlackCat\Crypto\CLI\Command\VaultDiagCommand;
+use BlackCat\Crypto\CLI\Command\VaultDecryptCommand;
+use BlackCat\Crypto\CLI\Command\VaultReportCommand;
+use BlackCat\Crypto\CLI\Command\VaultCoverageCommand;
 use Psr\Log\NullLogger;
 
 final class Application
@@ -28,6 +35,13 @@ final class Application
         $this->register(new MetricsExportCommand($logger));
         $this->register(new TelemetrySseCommand($logger));
         $this->register(new KmsWatchdogCommand($logger));
+        $this->register(new ManifestShowCommand());
+        $this->register(new ManifestDiffCommand());
+        $this->register(new VaultMigrateCommand());
+        $this->register(new VaultDiagCommand());
+        $this->register(new VaultDecryptCommand());
+        $this->register(new VaultReportCommand());
+        $this->register(new VaultCoverageCommand());
     }
 
     public function register(CommandInterface $command): void

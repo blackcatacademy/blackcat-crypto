@@ -45,4 +45,13 @@ final class KeyRegistry
         $slotDef = $this->slots[$slot] ?? KeySlot::default($slot);
         return $this->resolver->kmsBindings($slotDef);
     }
+
+    /**
+     * @return list<KeyMaterial>
+     */
+    public function all(string $slot): array
+    {
+        $slotDef = $this->slots[$slot] ?? KeySlot::default($slot);
+        return $this->resolver->all($slotDef);
+    }
 }

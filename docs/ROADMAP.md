@@ -40,9 +40,28 @@
 - CLI příkazy `wrap:queue status|run` pro monitoring/backfill a `metrics:export` pro JSON/Prometheus export.
 - `TelemetryExporter` sbírá stav KMS clusteru + wrap queue backlog a data lze scrapovat v Prometheu.
 
-## Stage 9 – Federated Secrets Governance (in progress)
-- ✅ Streaming SSE feed (`telemetry:sse`) a watchdog (`kms:watchdog`) – automatická suspendace nezdravých KMS klientů.
-- ✅ Tenant rewrap orchestrátor – události z Database/Sync mohou naplánovat wrap joby pro konkrétní tenant contexts.
-- ⏳ SDK balíčky (`blackcat-crypto-js`, `blackcat-crypto-rust`) sdílí stejné envelope formáty / rotace politiky pro další služby.
+## Stage 9 – Federated Secrets Governance ✅
+- Streaming SSE feed (`telemetry:sse`) a watchdog (`kms:watchdog`) – automatická suspendace nezdravých KMS klientů.
+- Tenant rewrap orchestrátor – události z Database/Sync mohou naplánovat wrap joby pro konkrétní tenant contexts.
+- CoreBridge (`BlackCat\Crypto\Bridge\CoreCryptoBridge`) sjednocuje `blackcat-core` (`Crypto.php`, `FileVault.php`, `KeyManager.php`) s `CryptoManagerem`, takže všechna core data používají totožné AEAD/HMAC sloty jako zbytek platformy.
+- SDK balíčky (`blackcat-crypto-js`, `blackcat-crypto-rust`) sdílí envelope formáty + rotace politiky s centrálním enginem.
 
-(Repo je nyní na Stage 8; další práce pokračuje dle plánu výše.)
+Repo je nyní na Stage 9.
+
+## Stage 10 – Vault Streaming & Policy Mesh ✅
+- `blackcat-core` FileVault streamuje přes `CryptoManager` (chunked encrypt/decrypt, audit trail). `.meta` a AUDIT logy nesou `key_id` i manifest kontext.
+- Vault CLI trio `vault:diag`/`vault:report`/`vault:decrypt` pokrývá auditní scénáře (metadata coverage vs manifest, fail-on-warn, plaintext export).
+- `vault:migrate` slouží k postupné migraci legacy `.enc` → double-envelope + wrap queue follow-up.
+- Cross-repo policy mesh: manifesty (`blackcat-crypto-manifests`) sdílí kontexty pro `blackcat-core`, `blackcat-crypto`, `blackcat-crypto-js` i DB adapter.
+- `blackcat-database-crypto` Stage 1 zakončena (transparentní šifrování při insert/update).
+
+## Stage 11 – Data Plane Fusion (in progress)
+- Transparentní hooky v `blackcat-database` repositories (registrace encryption mapy, linting + telemetry).
+- `CryptoManager` publikuje “query intents” – metadata proudí do observability (traces/logs) a governance služeb.
+- Self-service portal (napojený na `blackcat-governance`, `blackcat-support`) pro správu manifestů, approvals, regeneraci CLI/SDK artefaktů.
+- Vault policy enforcement: `vault:report --fail-on-unused` + API/feeds do compliance dashboards.
+
+## Stage 12 – Autonomous Compliance Mesh (planned)
+- Automatizované enforcement runbooks: pokud manifest/DB driftuje, orchestrace spouští `vault:migrate` / wrap queue / ticketing.
+- AI asistenti (`blackcat-ai`) navrhují nové contexty podle datových profilů, generují PRs do manifest repo.
+- Cross-cloud KMS handshake – `blackcat-crypto-kms` i `blackcat-hsm` sdílí stejné manifesty + telemetry, což umožní zero-trust multi-cloud rotace.

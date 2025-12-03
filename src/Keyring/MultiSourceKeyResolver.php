@@ -44,6 +44,11 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         return $bindings;
     }
 
+    public function all(KeySlot $slot): array
+    {
+        return $this->loadAllKeys($slot);
+    }
+
     /** @return list<KeyMaterial> */
     private function loadAllKeys(KeySlot $slot): array
     {

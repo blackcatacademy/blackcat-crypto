@@ -32,4 +32,9 @@ final class InMemoryKeyResolver implements KeyResolverInterface
     {
         return [];
     }
+
+    public function all(KeySlot $slot): array
+    {
+        return $this->keys[$slot->name()] ?? [];
+    }
 }

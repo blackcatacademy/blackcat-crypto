@@ -128,6 +128,33 @@ final class CryptoManager
         return $plaintext;
     }
 
+    public function decryptLocalWithAnyKey(string $slot, string $nonce, string $ciphertext): ?string
+    {
+        $materials = $this->keyRegistry->all($slot);
+        foreach ($materials as $material) {
+            try {
+                $payload = new Payload($ciphertext, $nonce, $material->id);
+                return $this->decryptLocal($slot, $payload);
+            } catch (\Throwable $e) {
+                $this->logger?->debug('decryptLocalWithAnyKey failed candidate', [
+                    'slot' => $slot,
+                    'key' => $material->id,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+        }
+
+        if ($this->logger) {
+            try {
+                $this->logger->warning('decryptLocalWithAnyKey exhausted all candidates', ['slot' => $slot]);
+            } catch (\Throwable $_) {
+            }
+        }
+
+        return null;
+    }
+
     public function hmac(string $slot, string $message): string
     {
         return $this->hmac->sign($slot, $message);
@@ -136,6 +163,19 @@ final class CryptoManager
     public function verifyHmac(string $slot, string $message, string $signature): bool
     {
         return $this->hmac->verify($slot, $message, $signature);
+    }
+
+    public function keyMaterial(string $slot, ?string $forceKeyId = null): \BlackCat\Crypto\Keyring\KeyMaterial
+    {
+        return $this->keyRegistry->deriveAeadKey($slot, $forceKeyId);
+    }
+
+    /**
+     * @return list<\BlackCat\Crypto\Keyring\KeyMaterial>
+     */
+    public function allKeyMaterial(string $slot): array
+    {
+        return $this->keyRegistry->all($slot);
     }
 
     private static function buildAead(string $driver, KeyRegistry $registry, ?LoggerInterface $logger): AeadCipherInterface

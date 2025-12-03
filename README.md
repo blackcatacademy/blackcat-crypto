@@ -85,12 +85,49 @@ php bin/crypto wrap:status storage/envelopes/123.json
 php bin/crypto kms:diag
 php bin/crypto wrap:queue status --limit 10
 php bin/crypto wrap:queue run --limit 25 --dump-dir=/tmp/rewrap
+php bin/crypto manifest:show --output=/tmp/manifest.json
+php bin/crypto vault:diag storage/files/
+php bin/crypto vault:migrate storage/files/foo.enc storage/files/foo.envelope
+php bin/crypto vault:decrypt storage/files/foo.enc --output=/tmp/foo.txt
 php bin/crypto metrics:export prom
 php bin/crypto telemetry:sse --interval=5
 php bin/crypto kms:watchdog --interval=30
+php bin/crypto vault:coverage var/ingress.ndjson --table --top=5
+# agregace ze všech repozitářů (viz docs/COVERAGE-WORKFLOW.md)
+./scripts/run-coverage-report.sh --table --top=5
 ```
 
 CLI obsahuje generování klíčů, inspekci obálek, diagnostiku KMS, správu wrap queue a export metrik (JSON i Prometheus).
+
+### Core Bridge (blackcat-core ↔️ blackcat-crypto)
+
+`blackcat-core` nyní používá `BlackCat\Crypto\Bridge\CoreCryptoBridge`, takže třídy `Security\Crypto`, `Security\KeyManager` a `Security\FileVault` delegují šifrování/HMAC na `CryptoManager`. Výhody:
+
+- jednotné klíče/rotace napříč core aplikacemi bez duálních implementací,
+- `Crypto::encrypt()` vrací verzi 2 payload (obsahuje `key_id`), ale `decrypt()` stále rozpozná staré verze 1,
+- CSRF HMACy se vydávají přes slot `core.hmac.csrf` → snadnější audit v `blackcat-crypto`.
+
+Bridging se aktivuje automaticky po zavolání `Crypto::initFromKeyManager()` (Stačí mít nainstalovaný balík `blackcat-crypto`). Legacy projekty tak mohou postupně přecházet na nový engine bez přepisu kódu.
+
+### Manifesty kryptografických kontextů
+
+Repo `blackcat-crypto-manifests` obsahuje sdílené JSON manifesty (`contexts/*.json`). Nastav:
+
+```bash
+export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+
+# porovnej manifesty (např. CI)
+php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest.json --json
+```
+
+`CryptoConfig::fromEnv()` tím automaticky načte všechny sloty/rotace, které pak používají `CryptoManager`, `CoreCryptoBridge` i SDK balíčky (`blackcat-crypto-js`, `blackcat-crypto-rust`). Stačí přidat nový kontext do manifestu a všechny repozitáře jej získají při dalším bootu, žádná duplicita konfigurace.
+
+#### Vault CLI toolkit
+
+- `php bin/crypto vault:diag storage/secure/` – projde všechny `.enc` soubory, zkontroluje headers/metadata (verze, `key_id`, kontext) a vypíše případná varování. Umí `--json`, `--manifest`, `--fail-on-warn`.
+- `php bin/crypto vault:report storage/secure/` – agreguje statistiky (`context`, `key_version`, chybějící metadata) a porovnává s manifestem – vhodné pro audit/policy coverage dashboardy.
+- `php bin/crypto vault:migrate legacy/file.enc new/file.envelope` – přečte starý FileVault soubor (`.enc` + `.meta`), dešifruje ho pomocí `CoreCryptoBridge` a uloží čistý `Envelope` (double-envelope) zpět do cílové cesty. Hodí se pro postupnou migraci historických dat.
+- `php bin/crypto vault:decrypt legacy/file.enc --output=/tmp/plain.txt` – dešifruje `.enc` payload a uloží plaintext pro audit/debug (využívá stejný manifest kontext).
 
 ### Wrap queue & telemetry
 
