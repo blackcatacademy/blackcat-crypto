@@ -3,7 +3,7 @@
 ### Governance + Telemetry refresh
 - Added `gov:assess` CLI for low-risk auto-approvals (unwrap/decrypt). Tune with `--max-amount`, `--max-sensitivity`, pass context via `--tenant`, `--sensitivity`, `--amount`.
 - LowRiskApprovalService available as a PHP helper for service-layer governance.
-- New lightweight HTTP endpoint `public/governance.php` for runtime approval checks (POST JSON; configurable via `LOW_RISK_MAX_AMOUNT` / `LOW_RISK_MAX_SENSITIVITY`).
+- New lightweight HTTP endpoint `public/governance.php` for runtime approval checks (POST JSON; configurable via `GOV_MAX_AUTO`, `GOV_MAX_SENSITIVITY`, `GOV_RATE_BURST`, `GOV_RATE_WINDOW`, `GOV_TENANT_LIMITS_JSON`).
 - Intent telemetry now tags PII clusters and workload class; archives rotate via `archiveMaxBytes`/`archiveKeep`.
 - Telemetry exporter emits richer intent tag counts (Prometheus/OpenTelemetry/JSON).
 - Database crypto hook bridge exposes telemetry snapshots for DB-facing tooling, now enriched with CI metadata when present (e.g., GitHub Actions env).

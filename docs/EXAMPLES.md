@@ -45,6 +45,12 @@ curl -X POST https://yourdomain/governance.php \
   -d '{"tenant":"acme","sensitivity":"low","amount":500,"reason":"report export"}'
 ```
 
+Environment toggles:
+
+- `GOV_MAX_AUTO` (default `10000`) / `GOV_MAX_SENSITIVITY` (default `low`)
+- `GOV_RATE_BURST` (default `50`) / `GOV_RATE_WINDOW` seconds (default `60`)
+- `GOV_TENANT_LIMITS_JSON` e.g. `{"acme":{"max_amount":2000,"max_sensitivity":"medium"}}`
+
 ## Wrap queue
 ```bash
 # enqueue wrap jobs from manifest
