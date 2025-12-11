@@ -23,6 +23,12 @@ final class HsmKmsClient implements KmsClientInterface
         return (string)($this->config['id'] ?? 'hsm-kms');
     }
 
+    private function keyVersion(): ?string
+    {
+        $version = $this->config['key_version'] ?? null;
+        return $version === null ? null : (string)$version;
+    }
+
     public function wrap(string $context, Payload $payload): array
     {
         $key = $this->loadKey();
@@ -54,6 +60,9 @@ final class HsmKmsClient implements KmsClientInterface
             'cipher' => $cipher,
             'tagLength' => $tagLength,
         ];
+        if (($version = $this->keyVersion()) !== null) {
+            $meta['keyVersion'] = $version;
+        }
         if ($tag !== null) {
             $meta['tag'] = base64_encode($tag);
         }
@@ -67,6 +76,11 @@ final class HsmKmsClient implements KmsClientInterface
         $cipher = (string)($metadata['cipher'] ?? $this->cipher());
         if (!$this->isCipherAllowed($cipher)) {
             throw new RuntimeException('Cipher ' . $cipher . ' is not allowed for HSM unwrap.');
+        }
+        $expectedVersion = $this->keyVersion();
+        $metaVersion = $metadata['keyVersion'] ?? null;
+        if ($expectedVersion !== null && $metaVersion !== null && (string)$metaVersion !== $expectedVersion) {
+            throw new RuntimeException('HSM unwrap rejected: keyVersion mismatch.');
         }
         $ciphertext = base64_decode((string)($metadata['ciphertext'] ?? ''), true);
         $nonce = base64_decode((string)($metadata['nonce'] ?? ''), true);
@@ -94,15 +108,25 @@ final class HsmKmsClient implements KmsClientInterface
 
     public function health(): array
     {
+        $key = null;
+        try {
+            $key = $this->loadKey();
+        } catch (\Throwable) {
+            // swallow, still return degraded health
+        }
+        $fingerprint = $key ? base64_encode(hash('sha256', $key, true)) : null;
         return [
             'client' => $this->id(),
             'status' => 'ok',
             'origin' => 'local-hsm',
             'cipher' => $this->cipher(),
             'key_bytes' => $this->keyLength(),
+            'key_version' => $this->keyVersion(),
             'aad_context' => (bool)($this->config['aad_context'] ?? false),
             'nonce_bytes' => $this->nonceLength($this->cipher()),
             'tag_length' => $this->tagLength($this->cipher()),
+            'allowed_ciphers' => $this->config['allow_ciphers'] ?? null,
+            'fingerprint' => $fingerprint,
         ];
     }
 

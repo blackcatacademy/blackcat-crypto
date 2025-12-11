@@ -156,6 +156,7 @@ final class CoreCryptoBridge
     private static function manager(): CryptoManager
     {
         if (self::$manager === null) {
+            self::validateOptions(self::$options);
             $config = CryptoConfig::fromEnv(self::buildEnv());
             $logger = self::$options['logger'] ?? null;
             if ($logger !== null && !$logger instanceof LoggerInterface) {
@@ -201,6 +202,32 @@ final class CoreCryptoBridge
         ];
 
         return $env;
+    }
+
+    private static function validateOptions(array $options): void
+    {
+        $keysDir = (string)($options['keys_dir'] ?? '');
+        if ($keysDir === '' || !is_dir($keysDir) || !is_readable($keysDir)) {
+            throw new \InvalidArgumentException('CoreCryptoBridge requires readable keys_dir directory');
+        }
+
+        $manifest = (string)($options['manifest'] ?? '');
+        if ($manifest !== '') {
+            if (!is_file($manifest) || !is_readable($manifest)) {
+                throw new \InvalidArgumentException('CoreCryptoBridge manifest is not readable: ' . $manifest);
+            }
+            $raw = file_get_contents($manifest);
+            if ($raw === false) {
+                throw new \InvalidArgumentException('CoreCryptoBridge failed to read manifest: ' . $manifest);
+            }
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded)) {
+                throw new \InvalidArgumentException('CoreCryptoBridge manifest must be valid JSON: ' . $manifest);
+            }
+            if (!isset($decoded['slots']) || !is_array($decoded['slots'])) {
+                throw new \InvalidArgumentException('CoreCryptoBridge manifest missing "slots" definition.');
+            }
+        }
     }
 
     private static function packPayload(Payload $payload): string
