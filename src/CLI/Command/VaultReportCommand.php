@@ -19,7 +19,7 @@ final class VaultReportCommand implements CommandInterface
     {
         [$options, $paths] = $this->parseArgs($args);
         if ($paths === []) {
-            fwrite(STDERR, "Usage: vault:report [--json] [--manifest=path] <directory> [...]\n");
+            fwrite(STDERR, "Usage: vault:report [--json] [--manifest=path] [--fail-on-unused] [--fail-on-missing] [--trace] <directory> [...]\n");
             return 1;
         }
 
@@ -32,6 +32,7 @@ final class VaultReportCommand implements CommandInterface
             'unknown_contexts' => [],
             'unused_manifest_contexts' => [],
             'files_by_context' => [],
+            'trace' => [],
         ];
 
         foreach ($paths as $dir) {
@@ -41,26 +42,52 @@ final class VaultReportCommand implements CommandInterface
             foreach ($files as $file) {
                 $result['files'] += 1;
                 $metaPath = $file . '.meta';
+                $traceEntry = [
+                    'file' => $file,
+                    'context' => null,
+                    'key_version' => null,
+                    'manifest_hit' => null,
+                    'missing_meta' => false,
+                    'unknown_context' => false,
+                ];
                 if (!is_file($metaPath)) {
                     $result['missing_meta'] += 1;
+                    $traceEntry['missing_meta'] = true;
+                    if (!empty($options['trace'])) {
+                        $result['trace'][] = $traceEntry;
+                    }
                     continue;
                 }
                 $meta = json_decode((string)@file_get_contents($metaPath), true);
                 if (!is_array($meta)) {
                     $result['missing_meta'] += 1;
+                    $traceEntry['missing_meta'] = true;
+                    if (!empty($options['trace'])) {
+                        $result['trace'][] = $traceEntry;
+                    }
                     continue;
                 }
                 $context = (string)($meta['context'] ?? '');
                 $keyVersion = (string)($meta['key_version'] ?? '');
+                $traceEntry['context'] = $context;
+                $traceEntry['key_version'] = $keyVersion;
                 $result['contexts'][$context] = ($result['contexts'][$context] ?? 0) + 1;
                 $result['key_versions'][$keyVersion] = ($result['key_versions'][$keyVersion] ?? 0) + 1;
                 $result['files_by_context'][$context][] = $file;
 
                 if (($context === '' || $keyVersion === '')) {
                     $result['missing_meta'] += 1;
+                    $traceEntry['missing_meta'] = true;
                 }
                 if ($manifest !== [] && $context !== '' && !in_array($context, $manifest, true)) {
                     $result['unknown_contexts'][$context] = ($result['unknown_contexts'][$context] ?? 0) + 1;
+                    $traceEntry['unknown_context'] = true;
+                }
+                if ($manifest !== []) {
+                    $traceEntry['manifest_hit'] = in_array($context, $manifest, true);
+                }
+                if (!empty($options['trace'])) {
+                    $result['trace'][] = $traceEntry;
                 }
             }
         }
@@ -100,10 +127,24 @@ final class VaultReportCommand implements CommandInterface
                     echo sprintf("  %s\n", $context);
                 }
             }
+            if (!empty($options['trace']) && !empty($result['trace'])) {
+                echo "Trace:\n";
+                foreach ($result['trace'] as $entry) {
+                    $ctx = $entry['context'] ?: '(missing)';
+                    $kv = $entry['key_version'] ?: '(missing)';
+                    $flags = [];
+                    if ($entry['missing_meta']) $flags[] = 'missing_meta';
+                    if ($entry['unknown_context']) $flags[] = 'unknown_context';
+                    $flagText = $flags ? ' [' . implode(',', $flags) . ']' : '';
+                    echo sprintf("  %s => %s (key=%s)%s\n", $entry['file'], $ctx, $kv, $flagText);
+                }
+            }
         }
 
         $exit = 0;
-        if (!empty($options['fail-on-unused']) && !empty($result['unused_manifest_contexts'])) {
+        if (!empty($options['fail-on-missing']) && $result['missing_meta'] > 0) {
+            $exit = 3;
+        } elseif (!empty($options['fail-on-unused']) && !empty($result['unused_manifest_contexts'])) {
             $exit = 2;
         }
         return $exit;
@@ -120,7 +161,11 @@ final class VaultReportCommand implements CommandInterface
         foreach ($args as $arg) {
             if (str_starts_with($arg, '--')) {
                 [$key, $value] = array_pad(explode('=', substr($arg, 2), 2), 2, '1');
-                $options[$key] = $value;
+                if (in_array($key, ['json', 'fail-on-unused', 'fail-on-missing', 'trace'], true)) {
+                    $options[$key] = ($value === '0') ? false : true;
+                } else {
+                    $options[$key] = $value;
+                }
             } else {
                 $paths[] = $arg;
             }

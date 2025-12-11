@@ -43,20 +43,18 @@ final class WrapQueueCommand implements CommandInterface
     private function printStatus(WrapQueueInterface $queue, array $options): int
     {
         $limit = isset($options['limit']) ? max(1, (int)$options['limit']) : 25;
-        $size = $queue->size();
-        $jobs = $queue->peek(min($limit, $size));
-        $oldest = null;
-        $contexts = [];
-        foreach ($jobs as $job) {
-            $oldest = $oldest === null ? $job->enqueuedAt : min($oldest, $job->enqueuedAt);
-            $contexts[$job->context] = ($contexts[$job->context] ?? 0) + 1;
-        }
+        $metrics = \BlackCat\Crypto\Telemetry\TelemetryExporter::queueMetrics($queue, $limit);
         $status = [
-            'backlog' => $size,
-            'sampled' => count($jobs),
-            'oldestAgeSeconds' => $oldest ? max(0, time() - $oldest) : 0,
-            'contexts' => $contexts,
+            'backlog' => $metrics['backlog'],
+            'sampled' => $metrics['sampled'],
+            'oldestAgeSeconds' => $metrics['oldest_age_seconds'],
+            'contexts' => $metrics['sample_contexts'],
+            'failed' => $metrics['failed'],
+            'failedContexts' => $metrics['failed_contexts'],
         ];
+        if (!empty($metrics['last_errors'])) {
+            $status['lastErrors'] = $metrics['last_errors'];
+        }
         echo json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
         return 0;
     }

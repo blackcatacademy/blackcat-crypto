@@ -5,6 +5,8 @@ namespace BlackCat\Crypto\Kms;
 
 use BlackCat\Crypto\Contracts\KmsClientInterface;
 use BlackCat\Crypto\Support\Payload;
+use BlackCat\Crypto\Kms\HttpKmsClient;
+use BlackCat\Crypto\Kms\HsmKmsClient;
 use Psr\Log\LoggerInterface;
 
 final class KmsRouter
@@ -13,9 +15,13 @@ final class KmsRouter
     private array $clients = [];
     /** @var array<string,int> */
     private array $suspendedUntil = [];
+    private string $suspendedCachePath;
 
     public function __construct(array $config, private readonly ?LoggerInterface $logger = null)
     {
+        $this->suspendedCachePath = (string)($config['suspended_cache'] ?? getenv('BLACKCAT_KMS_SUSPEND_CACHE') ?: sys_get_temp_dir() . '/blackcat-kms-suspend.json');
+        $this->loadSuspensions();
+
         foreach ($config as $definition) {
             $client = $this->clientFromDefinition($definition);
             $this->clients[] = [
@@ -62,6 +68,7 @@ final class KmsRouter
     {
         $until = time() + max(1, $ttlSeconds);
         $this->suspendedUntil[$clientId] = $until;
+        $this->persistSuspensions();
         $this->logger?->warning('crypto.kms.suspend', ['client' => $clientId, 'until' => $until]);
     }
 
@@ -69,8 +76,29 @@ final class KmsRouter
     {
         if (isset($this->suspendedUntil[$clientId])) {
             unset($this->suspendedUntil[$clientId]);
+            $this->persistSuspensions();
             $this->logger?->info('crypto.kms.resume', ['client' => $clientId]);
         }
+    }
+
+    /**
+     * @return list<array{id:string,type:string,weight:int,contexts:list<string>,suspendedUntil:int|null}>
+     */
+    public function describe(): array
+    {
+        $out = [];
+        foreach ($this->clients as $entry) {
+            $client = $entry['client'];
+            $id = $client->id();
+            $out[] = [
+                'id' => $id,
+                'type' => $client instanceof HsmKmsClient ? 'hsm' : 'http',
+                'weight' => $entry['weight'],
+                'contexts' => $entry['contexts'],
+                'suspendedUntil' => $this->suspendedUntil[$id] ?? null,
+            ];
+        }
+        return $out;
     }
 
     private function pickClient(string $context, ?string $preferred): KmsClientInterface
@@ -133,6 +161,42 @@ final class KmsRouter
         if ($class && class_exists($class)) {
             return new $class($definition);
         }
+        if ($type === 'hsm') {
+            return new HsmKmsClient($definition);
+        }
         return new HttpKmsClient($definition);
+    }
+
+    private function loadSuspensions(): void
+    {
+        if (!is_file($this->suspendedCachePath)) {
+            return;
+        }
+        $json = file_get_contents($this->suspendedCachePath);
+        if ($json === false) {
+            return;
+        }
+        $data = json_decode($json, true);
+        if (!is_array($data)) {
+            return;
+        }
+        $now = time();
+        foreach ($data as $clientId => $until) {
+            if (!is_int($until)) {
+                continue;
+            }
+            if ($until > $now) {
+                $this->suspendedUntil[$clientId] = $until;
+            }
+        }
+    }
+
+    private function persistSuspensions(): void
+    {
+        $dir = dirname($this->suspendedCachePath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        file_put_contents($this->suspendedCachePath, json_encode($this->suspendedUntil));
     }
 }

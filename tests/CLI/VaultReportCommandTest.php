@@ -70,4 +70,34 @@ final class VaultReportCommandTest extends TestCase
         @rmdir($dir);
         @unlink($manifest);
     }
+
+    public function testFailOnMissingMeta(): void
+    {
+        $dir = sys_get_temp_dir() . '/vault-report-' . bin2hex(random_bytes(4));
+        mkdir($dir, 0770, true);
+        file_put_contents($dir . '/orphan.enc', random_bytes(32));
+
+        $command = new VaultReportCommand();
+        ob_start();
+        $exit = $command->run(["--fail-on-missing", $dir]);
+        $output = ob_get_clean();
+
+        self::assertSame(3, $exit);
+        self::assertStringContainsString('Missing metadata', $output);
+
+        $command = new VaultReportCommand();
+        ob_start();
+        $command->run(["--json", "--trace", $dir]);
+        $json = ob_get_clean();
+        $decoded = json_decode($json, true);
+        self::assertIsArray($decoded);
+        self::assertSame(1, $decoded['missing_meta']);
+        self::assertNotEmpty($decoded['trace']);
+        self::assertTrue($decoded['trace'][0]['missing_meta']);
+
+        foreach (glob($dir . '/*') as $file) {
+            @unlink($file);
+        }
+        @rmdir($dir);
+    }
 }

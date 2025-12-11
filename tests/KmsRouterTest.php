@@ -24,4 +24,16 @@ final class KmsRouterTest extends TestCase
         $metaOrders = $router->wrap('orders.payments', $payload, []);
         self::assertSame('orders', $metaOrders['client']);
     }
+
+    public function testHsmDefinitionIsPickedUp(): void
+    {
+        $secret = base64_encode(random_bytes(32));
+        $router = new KmsRouter([
+            ['type' => 'hsm', 'secret' => $secret, 'id' => 'hsm-1'],
+        ]);
+
+        $payload = new Payload('cipher', 'nonce', 'k1');
+        $meta = $router->wrap('core.ctx', $payload, []);
+        self::assertSame('hsm-1', $meta['client']);
+    }
 }

@@ -60,8 +60,69 @@ Repo je nyní na Stage 9.
 - `CryptoManager` publikuje “query intents” – metadata proudí do observability (traces/logs) a governance služeb.
 - Self-service portal (napojený na `blackcat-governance`, `blackcat-support`) pro správu manifestů, approvals, regeneraci CLI/SDK artefaktů.
 - Vault policy enforcement: `vault:report --fail-on-unused` + API/feeds do compliance dashboards.
+- Implementováno: HSM shim (`HsmKmsClient`), CLI pro rotace klíčů (`key:rotate`), validátor manifestů (`manifest:validate`), KMS router umí preferovat HSM klienta a CLI `kms:list|suspend|resume` + `describe()` pokrytí.
 
 ## Stage 12 – Autonomous Compliance Mesh (planned)
 - Automatizované enforcement runbooks: pokud manifest/DB driftuje, orchestrace spouští `vault:migrate` / wrap queue / ticketing.
 - AI asistenti (`blackcat-ai`) navrhují nové contexty podle datových profilů, generují PRs do manifest repo.
 - Cross-cloud KMS handshake – `blackcat-crypto-kms` i `blackcat-hsm` sdílí stejné manifesty + telemetry, což umožní zero-trust multi-cloud rotace.
+
+## Stage 13 – Trustless Proofs & Customer Control (planned)
+- Kryptografické auditní doklady: podepsané wrap/unwrap eventy a Merkle stromy nad KMS odpověďmi pro nezpochybnitelný audit.
+- BYOK/CKMS režim: plnohodnotná správa klíčů zákazníkem (rotate, suspend, geo-fence) při zachování platformních manifestů.
+- Hardening datové roviny: vzdálené ověřování klientů (attestation z HSM/TEE), „no-plaintext“ režim pro citlivé tenancy.
+
+## Stage 14 – MPC / Threshold Fabric (exploratory)
+- Experimentální threshold šifrování (Shamir / FROST) pro nejkritičtější klíče a recovery scénáře.
+- Zřetězené politiky pro disaster recovery (air-gap KMS, odpojitelné rotace, geo-sealed wrap queue).
+- Integrované kontrolní panely pro CISO/SRE: risk score klíčů, simulace selhání KMS a doporučené runbooky.
+
+## Stage 15 – Attested Edge & BYOK at Scale (planned)
+- Attestation-first klienti (TEE/HSM) pro edge workloady; politika vyžaduje ověření prostředí před wrap/unwrap.
+- BYOK/BYO-KMS orchestrace: self-service registrace tenant KMS s automatickým health-check a rollback scénáři.
+- Adaptive routing podle rizika (geo, cloud, tenant class) + real-time policy updates bez výpadku.
+
+## Stage 16 – Zero-Touch Assurance (exploratory)
+- Kryptografické „proof bundles“ (Merkle + podpis) pro každý wrap/unwrap/request – export do SIEM/forenzních nástrojů.
+- Plně automatizované runbooky při incidentu: auto-fence KMS uzlů, přesměrování na zálohy, audit feed do governance.
+- Remote kill-switch a „read-only“ režim pro nejrizikovější tenancy s řízeným návratem do plného provozu.
+
+## Stage 17 – Privacy-Preserving Analytics (future)
+- Volitelné HE/TEE kanály pro agregace bez dešifrování (počty, sumy, frekvence) – bezpečné feedy do analytics/AI.
+- „Dual control“ dotazování: risk scoring + policy approval pro jakýkoli přístup k zašifrovaným datům.
+- Automatizované rotace + rewrap na základě anomálií (ML model nad telemetry z KMS/queue).
+
+## Stage 18 – Continuous Assurance & Certifications (future)
+- Generování exportů pro SOC2/ISO/NIS2: důkazy o rotacích, KMS health, podpisy manifestů.
+- „Live posture“ dashboard: crypto hygiene score, doporučení k hardeningu, simulace výpadků cloud KMS.
+- Podpora regulovaných sektorů (fin/health/public) – předpřipravené politiky a reporting šablony.
+
+## Stage 19 – Federated Privacy & Clean Rooms (future)
+- Privacy-preserving collaboration: standardizované envelopes/tokeny pro clean-room výpočty a federované AI tréninky.
+- FHE/SMPC experimenty pro vybrané metriky (počty, CTR, churn) s politikami, které definují risk/cost hranice.
+- Cross-tenant policy mesh: koordinace rotací, wrap queue a attestací napříč partnery bez sdílení plaintextu.
+
+## Stage 20 – Certified PQ & Multi-Cloud Resilience (future)
+- Certifikační balíček pro PQ readiness (evidence o rotacích, attestace KMS/HSM, disaster runbooky) pro multi-cloud.
+- Geo-distributed policy mesh: automatické failover/failback s atestačními důkazy, bez manuálních zásahů.
+- Adaptive cost/risk engine: dynamicky volí algoritmy a routy (PQC vs hybrid) podle SLA, nákladů a compliance profilu.
+
+## Stage 21 – Zero-Knowledge Control Plane (future)
+- ZK důkazy pro policy enforcement: ověření, že wrap/unwrap proběhl dle politiky bez odhalení obsahu.
+- ZK attestace klientů (kombinace attestation + ZK) pro citlivé tenancy; evidence o splnění požadavků bez leaků.
+- „Prove-before-run“ mód pro nejrizikovější operace (např. export/unwrap), s auditováním do SIEM.
+
+## Stage 22 – Quantum Resilience Benchmark Suite (future)
+- Standardizované bench + test vectors pro PQ/hybrid AEAD a HMAC sloty, s publikačním scorecardem.
+- Chaos/DR testy nad KMS routerem a wrap queue (latence, výpadky, útoky) s automatickým hardening doporučením.
+- Publikované „trust levels“ per algoritmus/route, využitelné governance nástroji a SRE playbooky.
+
+## Stage 23 – Policy-as-Code & Explainable Crypto (future)
+- Policy-as-code hub: verifikovatelné policy balíčky (OPA/rego + ZK proofs) s impact analýzou před nasazením.
+- Explainable crypto router: vysvětlení, proč byla použita konkrétní trasa/algoritmus, včetně nákladů a rizik.
+- “Shadow routing” režim: testuje nové politiky/algoritmy paralelně a publikuje srovnávací metriky.
+
+## Stage 24 – AI-Augmented Operations (future)
+- AI asistenti pro incidenty: návrhy mitigací (reroute, rewrap, suspend client) s odhadovaným dopadem.
+- Predictive scaling pro KMS/router podle telemetrie (load, latence, health) a SLA.
+- Automatická tvorba runbooků a PRs do manifestů/politik na základě zjištěných anomálií.

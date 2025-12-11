@@ -20,6 +20,9 @@ final class CoreCryptoBridge
     private const VERSION = 2;
     private const DEFAULT_PREFIX = 'core';
 
+    /** @var null|callable(string,array):void */
+    private static $intentEmitter = null;
+    private static ?\BlackCat\Crypto\Telemetry\IntentCollector $intentCollector = null;
     private static ?CryptoManager $manager = null;
     private static array $options = [
         'context_prefix' => self::DEFAULT_PREFIX,
@@ -43,9 +46,30 @@ final class CoreCryptoBridge
         self::$manager = null;
     }
 
+    /**
+     * Optional hook to broadcast crypto intents (encrypt/decrypt/hmac/verify).
+     *
+     * @param null|callable(string,array):void $emitter receives ($intent, $payload)
+     */
+    public static function registerIntentEmitter(?callable $emitter): void
+    {
+        self::$intentEmitter = $emitter;
+    }
+
+    public static function enableIntentCollection(\BlackCat\Crypto\Telemetry\IntentCollector $collector): void
+    {
+        self::$intentCollector = $collector;
+        self::$intentEmitter = static fn(string $intent, array $payload) => $collector->record($intent, $payload);
+    }
+
     public static function encryptBinary(string $slot, string $plaintext): string
     {
         $payload = self::manager()->encryptLocal(self::slot($slot), $plaintext);
+        self::emitIntent('encrypt', [
+            'slot' => $slot,
+            'keyId' => $payload->keyId,
+            'ciphertextBytes' => strlen($payload->ciphertext),
+        ]);
         return self::packPayload($payload);
     }
 
@@ -56,20 +80,46 @@ final class CoreCryptoBridge
 
         if ($decoded['keyId'] !== null) {
             $payload = new Payload($decoded['ciphertext'], $decoded['nonce'], $decoded['keyId']);
-            return $manager->decryptLocal(self::slot($slot), $payload);
+            $out = $manager->decryptLocal(self::slot($slot), $payload);
+            self::emitIntent('decrypt', [
+                'slot' => $slot,
+                'keyId' => $decoded['keyId'],
+                'nonceBytes' => strlen($decoded['nonce']),
+                'success' => $out !== null,
+            ]);
+            return $out;
         }
 
-        return $manager->decryptLocalWithAnyKey(self::slot($slot), $decoded['nonce'], $decoded['ciphertext']);
+        $out = $manager->decryptLocalWithAnyKey(self::slot($slot), $decoded['nonce'], $decoded['ciphertext']);
+        self::emitIntent('decrypt', [
+            'slot' => $slot,
+            'keyId' => null,
+            'nonceBytes' => strlen($decoded['nonce']),
+            'success' => $out !== null,
+        ]);
+        return $out;
     }
 
     public static function hmac(string $slot, string $message): string
     {
-        return self::manager()->hmac(self::slot($slot), $message);
+        $sig = self::manager()->hmac(self::slot($slot), $message);
+        self::emitIntent('hmac', [
+            'slot' => $slot,
+            'messageBytes' => strlen($message),
+        ]);
+        return $sig;
     }
 
     public static function verifyHmac(string $slot, string $message, string $signature): bool
     {
-        return self::manager()->verifyHmac(self::slot($slot), $message, $signature);
+        $ok = self::manager()->verifyHmac(self::slot($slot), $message, $signature);
+        self::emitIntent('verify_hmac', [
+            'slot' => $slot,
+            'messageBytes' => strlen($message),
+            'signatureBytes' => strlen($signature),
+            'success' => $ok,
+        ]);
+        return $ok;
     }
 
     /**
@@ -111,7 +161,11 @@ final class CoreCryptoBridge
             if ($logger !== null && !$logger instanceof LoggerInterface) {
                 throw new \InvalidArgumentException('logger must implement LoggerInterface');
             }
-            self::$manager = CryptoManager::boot($config, $logger);
+            $manager = CryptoManager::boot($config, $logger);
+            if (self::$intentCollector !== null) {
+                $manager = $manager->withIntentCollector(self::$intentCollector);
+            }
+            self::$manager = $manager;
         }
 
         return self::$manager;
@@ -213,5 +267,18 @@ final class CoreCryptoBridge
             'nonce' => $nonce,
             'ciphertext' => $ciphertext,
         ];
+    }
+
+    private static function emitIntent(string $intent, array $payload): void
+    {
+        $emitter = self::$intentEmitter;
+        if ($emitter === null) {
+            return;
+        }
+        try {
+            $emitter($intent, $payload);
+        } catch (\Throwable) {
+            // Telemetry hooks must never break crypto flows.
+        }
     }
 }

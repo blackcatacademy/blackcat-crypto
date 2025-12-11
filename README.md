@@ -92,12 +92,16 @@ php bin/crypto vault:decrypt storage/files/foo.enc --output=/tmp/foo.txt
 php bin/crypto metrics:export prom
 php bin/crypto telemetry:sse --interval=5
 php bin/crypto kms:watchdog --interval=30
+php bin/crypto kms:suspend hsm-primary 600
+php bin/crypto kms:resume hsm-primary
 php bin/crypto vault:coverage var/ingress.ndjson --table --top=5
+php bin/crypto manifest:validate contexts/core.json --json
+php bin/crypto key:rotate app.hsm keys/
 # agregace ze všech repozitářů (viz docs/COVERAGE-WORKFLOW.md)
 ./scripts/run-coverage-report.sh --table --top=5
 ```
 
-CLI obsahuje generování klíčů, inspekci obálek, diagnostiku KMS, správu wrap queue a export metrik (JSON i Prometheus).
+CLI obsahuje generování/rotaci klíčů, inspekci obálek, diagnostiku KMS, správu wrap queue a export metrik (JSON i Prometheus). Manifest nástroje přibyly i pro validaci (`manifest:validate`). KMS lze operativně vyřadit/obnovit pomocí `kms:suspend` a `kms:resume` – užitečné pro incident runbooky nebo při plánované údržbě.
 
 ### Core Bridge (blackcat-core ↔️ blackcat-crypto)
 
@@ -136,6 +140,7 @@ php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest
 - `php bin/crypto metrics:export prom` exportuje metriky (`blackcat_kms_*`, `blackcat_wrap_queue_*`) pro Prometheus scrape endpoint.
 - `php bin/crypto telemetry:sse` nabídne Server-Sent Events feed, které lze přeposílat do `blackcat-observability` nebo interních dashboardů.
 - `php bin/crypto kms:watchdog` pravidelně kontroluje zdraví KMS a automaticky vypíná nestabilní klienty (obnoví je jakmile health hlásí OK).
+- `php bin/crypto kms:list [--json]` vypíše registrované KMS klienty, váhy, kontexty a případné suspendace.
 
 ### Rewrap orchestrace z externích systémů
 

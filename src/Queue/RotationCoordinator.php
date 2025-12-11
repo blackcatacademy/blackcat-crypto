@@ -22,6 +22,11 @@ final class RotationCoordinator
         $this->queue->enqueue(new WrapJob($envelope->context, $envelope->encode()));
     }
 
+    public function drain(int $limit = 50): int
+    {
+        return $this->process($limit);
+    }
+
     public function process(int $limit = 10): int
     {
         $processed = 0;
@@ -38,6 +43,8 @@ final class RotationCoordinator
                 }
             } catch (\Throwable $e) {
                 $job->attempts++;
+                $job->lastError = $e->getMessage();
+                $job->lastErrorAt = time();
                 if ($job->attempts < $this->maxAttempts) {
                     $this->queue->enqueue($job->requeue());
                 } else {
@@ -45,6 +52,7 @@ final class RotationCoordinator
                         'context' => $job->context,
                         'error' => $e->getMessage(),
                         'jobId' => $job->id,
+                        'attempts' => $job->attempts,
                     ]);
                 }
                 $this->logger?->warning('wrap-job-failed', [

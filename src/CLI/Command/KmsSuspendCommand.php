@@ -1,0 +1,44 @@
+<?php
+declare(strict_types=1);
+
+namespace BlackCat\Crypto\CLI\Command;
+
+use BlackCat\Crypto\Config\CryptoConfig;
+use BlackCat\Crypto\Kms\KmsRouter;
+use Psr\Log\LoggerInterface;
+
+final class KmsSuspendCommand implements CommandInterface
+{
+    public function __construct(private readonly LoggerInterface $logger) {}
+
+    public function name(): string
+    {
+        return 'kms:suspend';
+    }
+
+    public function description(): string
+    {
+        return 'Temporarily suspend a KMS client for a number of seconds.';
+    }
+
+    public function run(array $args): int
+    {
+        $clientId = $args[0] ?? null;
+        $ttl = isset($args[1]) ? (int)$args[1] : 300;
+        if ($clientId === null || $ttl <= 0) {
+            fwrite(STDERR, "Usage: kms:suspend <client-id> [ttl-seconds]\n");
+            return 1;
+        }
+
+        $cfg = CryptoConfig::fromEnv()->kmsConfig();
+        if ($cfg === []) {
+            fwrite(STDERR, "No KMS endpoints configured (set BLACKCAT_KMS_ENDPOINTS).\n");
+            return 1;
+        }
+
+        $router = new KmsRouter($cfg, $this->logger);
+        $router->suspend($clientId, $ttl);
+        echo "Suspended {$clientId} for {$ttl}s\n";
+        return 0;
+    }
+}

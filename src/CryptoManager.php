@@ -14,6 +14,7 @@ use BlackCat\Crypto\Support\Payload;
 use BlackCat\Crypto\Rotation\RotationPolicyRegistry;
 use BlackCat\Crypto\Queue\WrapQueueInterface;
 use BlackCat\Crypto\Queue\WrapJob;
+use BlackCat\Crypto\Telemetry\IntentCollector;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -31,6 +32,7 @@ final class CryptoManager
     private ?RotationPolicyRegistry $rotationPolicies;
     private ?WrapQueueInterface $wrapQueue;
     private ?LoggerInterface $logger;
+    private ?IntentCollector $intents;
 
     private function __construct(
         KeyRegistry $keyRegistry,
@@ -40,6 +42,7 @@ final class CryptoManager
         ?RotationPolicyRegistry $rotationPolicies = null,
         ?WrapQueueInterface $wrapQueue = null,
         ?LoggerInterface $logger = null,
+        ?IntentCollector $intents = null,
     ) {
         $this->keyRegistry = $keyRegistry;
         $this->aead = $aead;
@@ -48,6 +51,7 @@ final class CryptoManager
         $this->rotationPolicies = $rotationPolicies;
         $this->wrapQueue = $wrapQueue;
         $this->logger = $logger;
+        $this->intents = $intents;
     }
 
     public static function boot(CryptoConfig $config, ?LoggerInterface $logger = null): self
@@ -61,7 +65,15 @@ final class CryptoManager
         $rotation = RotationPolicyRegistry::fromArray($config->rotationPolicies());
         $queueFactory = $config->wrapQueueFactory();
         $queue = $queueFactory ? $queueFactory() : null;
-        return new self($registry, $aead, $hmac, $kms, $rotation, $queue, $logger);
+        $manager = new self($registry, $aead, $hmac, $kms, $rotation, $queue, $logger);
+
+        if (getenv('BLACKCAT_CRYPTO_INTENTS')) {
+            $collector = new IntentCollector();
+            IntentCollector::global($collector);
+            $manager = $manager->withIntentCollector($collector);
+        }
+
+        return $manager;
     }
 
     public static function fromComponents(
@@ -71,15 +83,23 @@ final class CryptoManager
         KmsRouter $kms,
         ?RotationPolicyRegistry $rotation = null,
         ?WrapQueueInterface $wrapQueue = null,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?IntentCollector $intents = null,
     ): self {
-        return new self($registry, $aead, $hmac, $kms, $rotation, $wrapQueue, $logger);
+        return new self($registry, $aead, $hmac, $kms, $rotation, $wrapQueue, $logger, $intents);
     }
 
     public function withWrapQueue(WrapQueueInterface $queue): self
     {
         $clone = clone $this;
         $clone->wrapQueue = $queue;
+        return $clone;
+    }
+
+    public function withIntentCollector(IntentCollector $collector): self
+    {
+        $clone = clone $this;
+        $clone->intents = $collector;
         return $clone;
     }
 
@@ -95,6 +115,12 @@ final class CryptoManager
         $wrapped = $this->kms->wrap($context, $payload, $this->keyRegistry->kmsBindings($context), ['preferredClient' => $options['preferredClient'] ?? null]);
         $wrapped['wrapCount'] = $wrapCount;
         $envelope = Envelope::fromLayers($payload, $wrapped, $context);
+        $this->recordIntent('encrypt_context', [
+            'context' => $context,
+            'localKeyId' => $payload->keyId,
+            'kmsClient' => $wrapped['client'] ?? null,
+            'wrapCount' => $wrapCount,
+        ]);
         $this->maybeScheduleRotation($envelope);
         return $envelope;
     }
@@ -109,6 +135,12 @@ final class CryptoManager
         $localKey = $this->keyRegistry->deriveAeadKey($context, $envelope->local->keyId);
         $plaintext = $this->aead->decrypt($wrapped, $context, $localKey);
         $this->maybeScheduleRotation($envelope);
+        $this->recordIntent('decrypt_context', [
+            'context' => $context,
+            'localKeyId' => $envelope->local->keyId,
+            'kmsClient' => $envelope->kmsMetadata['client'] ?? null,
+            'wrapCount' => $envelope->kmsMetadata['wrapCount'] ?? null,
+        ]);
         return $plaintext;
     }
 
@@ -118,13 +150,23 @@ final class CryptoManager
     public function encryptLocal(string $slot, string $plaintext): Payload
     {
         $key = $this->keyRegistry->deriveAeadKey($slot);
-        return $this->aead->encrypt($plaintext, $slot, $key);
+        $payload = $this->aead->encrypt($plaintext, $slot, $key);
+        $this->recordIntent('encrypt_local', [
+            'slot' => $slot,
+            'keyId' => $payload->keyId,
+        ]);
+        return $payload;
     }
 
     public function decryptLocal(string $slot, Payload $payload): string
     {
         $key = $this->keyRegistry->deriveAeadKey($slot, $payload->keyId);
         $plaintext = $this->aead->decrypt($payload, $slot, $key);
+        $this->recordIntent('decrypt_local', [
+            'slot' => $slot,
+            'keyId' => $payload->keyId,
+            'success' => true,
+        ]);
         return $plaintext;
     }
 
@@ -134,7 +176,8 @@ final class CryptoManager
         foreach ($materials as $material) {
             try {
                 $payload = new Payload($ciphertext, $nonce, $material->id);
-                return $this->decryptLocal($slot, $payload);
+                $out = $this->decryptLocal($slot, $payload);
+                return $out;
             } catch (\Throwable $e) {
                 $this->logger?->debug('decryptLocalWithAnyKey failed candidate', [
                     'slot' => $slot,
@@ -152,17 +195,34 @@ final class CryptoManager
             }
         }
 
+        $this->recordIntent('decrypt_local', [
+            'slot' => $slot,
+            'keyId' => null,
+            'success' => false,
+        ]);
         return null;
     }
 
     public function hmac(string $slot, string $message): string
     {
-        return $this->hmac->sign($slot, $message);
+        $sig = $this->hmac->sign($slot, $message);
+        $this->recordIntent('hmac', [
+            'slot' => $slot,
+            'messageBytes' => strlen($message),
+        ]);
+        return $sig;
     }
 
     public function verifyHmac(string $slot, string $message, string $signature): bool
     {
-        return $this->hmac->verify($slot, $message, $signature);
+        $ok = $this->hmac->verify($slot, $message, $signature);
+        $this->recordIntent('verify_hmac', [
+            'slot' => $slot,
+            'messageBytes' => strlen($message),
+            'signatureBytes' => strlen($signature),
+            'success' => $ok,
+        ]);
+        return $ok;
     }
 
     public function keyMaterial(string $slot, ?string $forceKeyId = null): \BlackCat\Crypto\Keyring\KeyMaterial
@@ -193,6 +253,20 @@ final class CryptoManager
         }
         if ($this->rotationPolicies->shouldRotate($envelope)) {
             $this->wrapQueue->enqueue(new WrapJob($envelope->context, $envelope->encode()));
+        }
+    }
+
+    private function recordIntent(string $intent, array $payload): void
+    {
+        $collector = $this->intents ?? IntentCollector::global();
+        if ($collector === null) {
+            return;
+        }
+
+        try {
+            $collector->record($intent, $payload);
+        } catch (\Throwable) {
+            // Telemetry nesmí zlomit kryptografii.
         }
     }
 }
