@@ -11,7 +11,7 @@ use Psr\Log\LoggerInterface;
 
 final class KmsRouter
 {
-    /** @var list<array{client:KmsClientInterface,weight:int,contexts:list<string>}> */
+    /** @var list<array{client:KmsClientInterface,weight:int,contexts:list<string>,tenants:list<string>}> */
     private array $clients = [];
     /** @var array<string,int> */
     private array $suspendedUntil = [];
@@ -36,19 +36,24 @@ final class KmsRouter
                 'client' => $client,
                 'weight' => max(1, (int)($definition['weight'] ?? 1)),
                 'contexts' => array_values((array)($definition['contexts'] ?? [])),
+                'tenants' => array_values((array)($definition['tenants'] ?? [])),
             ];
         }
     }
 
     public function wrap(string $context, Payload $payload, array $bindings, array $options = []): array
     {
-        $client = $this->pickClient($context, $options['preferredClient'] ?? null);
+        $tenant = (string)($options['tenant'] ?? ($bindings['tenant'] ?? ''));
+        $client = $this->pickClient($context, $options['preferredClient'] ?? null, $tenant);
         if ($client === null) {
             return $this->localMetadata($payload);
         }
 
         $meta = $client->wrap($context, $payload);
         $meta['client'] = $client->id();
+        if ($tenant !== '') {
+            $meta['tenant'] = $tenant;
+        }
         return $meta;
     }
 
@@ -109,7 +114,7 @@ final class KmsRouter
     }
 
     /**
-     * @return list<array{id:string,type:string,weight:int,contexts:list<string>,suspendedUntil:int|null}>
+     * @return list<array{id:string,type:string,weight:int,contexts:list<string>,tenants:list<string>,suspendedUntil:int|null}>
      */
     public function describe(): array
     {
@@ -122,13 +127,14 @@ final class KmsRouter
                 'type' => $client instanceof HsmKmsClient ? 'hsm' : 'http',
                 'weight' => $entry['weight'],
                 'contexts' => $entry['contexts'],
+                'tenants' => $entry['tenants'],
                 'suspendedUntil' => $this->suspendedUntil[$id] ?? null,
             ];
         }
         return $out;
     }
 
-    private function pickClient(string $context, ?string $preferred): ?KmsClientInterface
+    private function pickClient(string $context, ?string $preferred, ?string $tenant): ?KmsClientInterface
     {
         if ($preferred !== null) {
             foreach ($this->clients as $entry) {
@@ -137,7 +143,7 @@ final class KmsRouter
                 }
             }
         }
-        $candidates = $this->filterByContext($context);
+        $candidates = $this->filterByContext($context, $tenant);
         if ($candidates === []) {
             return null;
         }
@@ -153,8 +159,8 @@ final class KmsRouter
         return $candidates[array_key_last($candidates)]['client'];
     }
 
-    /** @return list<array{client:KmsClientInterface,weight:int,contexts:list<string>}> */
-    private function filterByContext(string $context): array
+    /** @return list<array{client:KmsClientInterface,weight:int,contexts:list<string>,tenants:list<string>}> */
+    private function filterByContext(string $context, ?string $tenant): array
     {
         $matches = [];
         foreach ($this->clients as $entry) {
@@ -163,6 +169,17 @@ final class KmsRouter
                 continue;
             }
             $contexts = $entry['contexts'];
+            $tenants = $entry['tenants'];
+            if ($contexts !== [] && !$this->matchesAny($context, $contexts)) {
+                continue;
+            }
+            if ($tenant !== null && $tenant !== '' && $tenants !== [] && !in_array($tenant, $tenants, true)) {
+                continue;
+            }
+            if ($tenants !== [] && $tenant === '') {
+                // Tenant is required for this client list, skip if not provided.
+                continue;
+            }
             if ($contexts === [] || $this->matchesAny($context, $contexts)) {
                 $matches[] = $entry;
             }

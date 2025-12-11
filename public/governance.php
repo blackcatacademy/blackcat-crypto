@@ -25,9 +25,22 @@ $maxAmountEnv = getenv('LOW_RISK_MAX_AMOUNT');
 $maxSensitivityEnv = getenv('LOW_RISK_MAX_SENSITIVITY');
 $maxAutoAmount = $maxAmountEnv !== false ? (int)$maxAmountEnv : 10_000;
 $maxSensitivity = $maxSensitivityEnv !== false ? (string)$maxSensitivityEnv : 'low';
+$tenantLimitsEnv = getenv('LOW_RISK_TENANT_LIMITS');
+$tenantLimits = [];
+if ($tenantLimitsEnv) {
+    $decoded = json_decode($tenantLimitsEnv, true);
+    if (is_array($decoded)) {
+        $tenantLimits = $decoded;
+    }
+}
+$burst = getenv('LOW_RISK_RATE_BURST');
+$window = getenv('LOW_RISK_RATE_WINDOW');
 $service = new LowRiskApprovalService(
     maxAutoAmount: $maxAutoAmount,
-    maxSensitivity: $maxSensitivity
+    maxSensitivity: $maxSensitivity,
+    tenantLimits: $tenantLimits,
+    defaultBurst: $burst !== false ? (int)$burst : 50,
+    defaultWindowSeconds: $window !== false ? (int)$window : 60
 );
 
 $context = [
@@ -49,5 +62,7 @@ echo json_encode([
         'max_auto_amount' => $maxAutoAmount,
         'max_sensitivity' => $maxSensitivity,
         'timestamp' => time(),
+        'limits' => $decision['meta']['limits'] ?? null,
+        'rate' => $decision['meta']['rate'] ?? null,
     ],
 ]);
