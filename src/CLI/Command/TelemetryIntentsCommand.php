@@ -15,7 +15,7 @@ final class TelemetryIntentsCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Export intent telemetry (counts/recent) in JSON or Prometheus format.';
+        return 'Export intent telemetry (counts/recent) in JSON, Prometheus, or OTLP/JSON.';
     }
 
     public function run(array $args): int
@@ -35,6 +35,12 @@ final class TelemetryIntentsCommand implements CommandInterface
 
         if ($format === 'prom') {
             echo TelemetryExporter::asPrometheus($snapshot);
+            return 0;
+        } elseif ($format === 'otel') {
+            echo json_encode(
+                TelemetryExporter::asOpenTelemetry($snapshot),
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+            ) . PHP_EOL;
             return 0;
         }
 

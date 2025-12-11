@@ -102,6 +102,104 @@ final class TelemetryExporter
     }
 
     /**
+     * Minimal OpenTelemetry ResourceMetrics payload (OTLP/JSON shape).
+     *
+     * @param array<string,mixed> $snapshot
+     * @return array<string,mixed>
+     */
+    public static function asOpenTelemetry(array $snapshot, string $serviceName = 'blackcat-crypto', string $scopeName = 'blackcat.crypto'): array
+    {
+        $ts = (int)floor(microtime(true) * 1_000_000_000);
+        $metrics = [];
+
+        $metrics[] = self::gaugeMetric(
+            'blackcat.kms.up_total',
+            'Number of healthy KMS clients.',
+            (int)($snapshot['kms_up_total'] ?? 0),
+            $ts
+        );
+
+        $metrics[] = self::gaugeMetric(
+            'blackcat.kms.suspended_total',
+            'Number of suspended KMS clients.',
+            (int)($snapshot['kms_suspended_total'] ?? 0),
+            $ts
+        );
+
+        foreach ($snapshot['kms_clients'] ?? [] as $client) {
+            $status = strtolower((string)($client['status'] ?? 'unknown'));
+            $value = $status === 'ok' ? 1 : 0;
+            $metrics[] = self::gaugeMetric(
+                'blackcat.kms.health',
+                'KMS client health (1 ok / 0 otherwise).',
+                $value,
+                $ts,
+                [
+                    'client' => (string)($client['id'] ?? 'unknown'),
+                    'status' => $status,
+                ]
+            );
+        }
+
+        $queue = $snapshot['wrap_queue'] ?? [];
+        $metrics[] = self::gaugeMetric(
+            'blackcat.wrap_queue.backlog',
+            'Number of pending wrap jobs.',
+            (int)($queue['backlog'] ?? 0),
+            $ts
+        );
+        $metrics[] = self::gaugeMetric(
+            'blackcat.wrap_queue.failed_total',
+            'Number of wrap jobs marked as failed.',
+            (int)($queue['failed'] ?? 0),
+            $ts
+        );
+        $metrics[] = self::gaugeMetric(
+            'blackcat.wrap_queue.oldest_age_seconds',
+            'Age of the oldest pending wrap job.',
+            (int)($queue['oldest_age_seconds'] ?? 0),
+            $ts
+        );
+
+        $intents = $snapshot['intents']['counts'] ?? [];
+        $intentPoints = [];
+        foreach ($intents as $intent => $count) {
+            $intentPoints[] = self::numberDataPoint((int)$count, $ts, ['intent' => (string)$intent]);
+        }
+        $metrics[] = [
+            'name' => 'blackcat.intents.total',
+            'description' => 'Total crypto intents recorded by type.',
+            'unit' => '1',
+            'sum' => [
+                'aggregationTemporality' => 2, // CUMULATIVE
+                'isMonotonic' => true,
+                'dataPoints' => $intentPoints ?: [self::numberDataPoint(0, $ts)],
+            ],
+        ];
+
+        return [
+            'resourceMetrics' => [
+                [
+                    'resource' => [
+                        'attributes' => self::attributes([
+                            'service.name' => $serviceName,
+                        ]),
+                    ],
+                    'scopeMetrics' => [
+                        [
+                            'scope' => [
+                                'name' => $scopeName,
+                                'version' => '1.0.0',
+                            ],
+                            'metrics' => $metrics,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public static function queueMetrics(?WrapQueueInterface $queue, int $peekLimit = 50): array
@@ -157,5 +255,60 @@ final class TelemetryExporter
     private static function escapeLabel(string $value): string
     {
         return str_replace(['\\', '"', "\n"], ['\\\\', '\"', ''], $value);
+    }
+
+    /**
+     * @param array<string,string> $attrs
+     * @return array<int,array<string,mixed>>
+     */
+    private static function attributes(array $attrs): array
+    {
+        $out = [];
+        foreach ($attrs as $key => $value) {
+            $out[] = [
+                'key' => (string)$key,
+                'value' => ['stringValue' => (string)$value],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,string|int|float> $attrs
+     * @return array<string,mixed>
+     */
+    private static function numberDataPoint(int|float $value, int $ts, array $attrs = []): array
+    {
+        $attrList = [];
+        foreach ($attrs as $key => $attrValue) {
+            $attrList[] = [
+                'key' => (string)$key,
+                'value' => is_int($attrValue)
+                    ? ['intValue' => $attrValue]
+                    : ['stringValue' => (string)$attrValue],
+            ];
+        }
+        return [
+            'timeUnixNano' => $ts,
+            'asDouble' => (float)$value,
+            'attributes' => $attrList,
+        ];
+    }
+
+    /**
+     * @param array<string,string> $attrs
+     */
+    private static function gaugeMetric(string $name, string $description, int|float $value, int $ts, array $attrs = []): array
+    {
+        return [
+            'name' => $name,
+            'description' => $description,
+            'unit' => '1',
+            'gauge' => [
+                'dataPoints' => [
+                    self::numberDataPoint($value, $ts, $attrs),
+                ],
+            ],
+        ];
     }
 }

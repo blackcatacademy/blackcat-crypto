@@ -19,7 +19,7 @@ final class MetricsExportCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Emit telemetry snapshot (JSON or Prometheus).';
+        return 'Emit telemetry snapshot (JSON, Prometheus, or OTLP/JSON).';
     }
 
     public function run(array $args): int
@@ -32,6 +32,11 @@ final class MetricsExportCommand implements CommandInterface
         $snapshot = TelemetryExporter::snapshot($router->health(), $queue);
         if ($format === 'prom') {
             echo TelemetryExporter::asPrometheus($snapshot);
+        } elseif ($format === 'otel') {
+            echo json_encode(
+                TelemetryExporter::asOpenTelemetry($snapshot),
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+            ) . PHP_EOL;
         } else {
             echo json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
         }
