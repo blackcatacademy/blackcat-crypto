@@ -1,0 +1,11 @@
+includes:
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
+
+parameters:
+    paths:
+        - src
+    level: 6
+    checkGenericClassInNonGenericObjectType: false
+    memoryLimit: 512M
+    tmpDir: var/phpstan
+    reportUnmatchedIgnoredErrors: false

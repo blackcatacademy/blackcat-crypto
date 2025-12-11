@@ -8,6 +8,10 @@
         "ext-sodium": "*",
         "psr/log": "^3.0"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5",
+        "phpstan/phpstan": "^1.11"
+    },
     "bin": [
         "bin/crypto"
     ],
@@ -20,6 +24,10 @@
         "psr-4": {
             "BlackCat\\Crypto\\Tests\\": "tests/"
         }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "stan": "vendor/bin/phpstan analyse src"
     },
     "minimum-stability": "dev",
     "prefer-stable": true

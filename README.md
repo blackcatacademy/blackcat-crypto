@@ -153,3 +153,16 @@ php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest
 - `blackcat-crypto-kms` poskytuje referenční KMS servery (HTTP daemon `bin/kms-http`) – `HttpKmsClient` na ně umí mluvit s Auth tokenem.
 - `BLACKCAT_CRYPTO_ROTATION` (JSON) umožňuje definovat politiky:\
   `export BLACKCAT_CRYPTO_ROTATION='{"users.*":{"maxAgeSeconds":86400,"maxWraps":3}}'`
+
+## Development (Docker-friendly)
+
+- Requirements: PHP 8.2+, ext-sodium, Composer.
+- Install deps + dev tools: `composer install`
+- Run tests: `composer test`
+- Static analysis: `composer stan`
+- Docker build (optional): `docker build -t blackcat-crypto .`
+- Run tests in container:
+  ```bash
+  docker run --rm -v $(pwd):/app -w /app blackcat-crypto vendor/bin/phpunit
+  ```
+- Or via compose: `docker-compose run --rm crypto`

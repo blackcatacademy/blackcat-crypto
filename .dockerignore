@@ -1,0 +1,7 @@
+vendor
+var
+.git
+.github
+node_modules
+*.log
+coverage
