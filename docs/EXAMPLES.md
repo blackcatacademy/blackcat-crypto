@@ -38,6 +38,13 @@ BlackCat\Crypto\Telemetry\IntentCollector::global(new IntentCollector());
 php bin/crypto telemetry:intents --format=otel --limit 10
 ```
 
+## Governance auto-approval API
+```bash
+curl -X POST https://yourdomain/governance.php \
+  -H 'Content-Type: application/json' \
+  -d '{"tenant":"acme","sensitivity":"low","amount":500,"reason":"report export"}'
+```
+
 ## Wrap queue
 ```bash
 # enqueue wrap jobs from manifest
@@ -45,4 +52,11 @@ php bin/crypto wrap:queue --manifest ./manifests/keys.yaml
 
 # check status/backlog
 php bin/crypto wrap:status
+```
+
+## CI-aware telemetry
+```bash
+# pass CI env so DB hooks tag build info
+GITHUB_ACTIONS=true GITHUB_RUN_ID=12345 \
+  php bin/crypto metrics:export otel
 ```
