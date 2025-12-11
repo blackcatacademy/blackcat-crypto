@@ -10,6 +10,10 @@
 - Added governance intent logging + approval decisions (see `GovernanceApprovalService`) for low-risk unwrap/decrypt with audit tags.
 - HSM/KMS metadata now reports allowed ciphers, key version, and fingerprints; unwrap checks version by config.
 
+### KMS hardening
+- HTTP KMS client now supports bearer/basic auth, custom headers, mTLS (CA/cert/key), peer verification toggle, and independent connect/read timeouts.
+- AEAD tag length is validated for HSM KMS (fails fast if outside 8–32 byte window).
+
 ### How to try
 - Enable intent collector: `BLACKCAT_CRYPTO_INTENTS=1 ./bin/crypto telemetry:intents --format=prom`.
 - Governance check: `./bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500`.

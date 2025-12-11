@@ -180,7 +180,13 @@ final class HsmKmsClient implements KmsClientInterface
         if (!$this->isAeadCipher($cipher)) {
             return 0;
         }
-        return (int)($this->config['tag_length'] ?? 16);
+        $value = (int)($this->config['tag_length'] ?? 16);
+        // Guard against overly short or excessive AEAD tags; OpenSSL typically permits 4–16 bytes,
+        // but we enforce a safer 8–32 byte window to avoid weak integrity coverage.
+        if ($value < 8 || $value > 32) {
+            throw new RuntimeException(sprintf('Invalid AEAD tag_length %d; expected between 8 and 32 bytes.', $value));
+        }
+        return $value;
     }
 
     private function isAeadCipher(string $cipher): bool
