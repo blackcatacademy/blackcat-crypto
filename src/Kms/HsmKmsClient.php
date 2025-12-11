@@ -32,14 +32,25 @@ final class HsmKmsClient implements KmsClientInterface
     /**
      * Guardrails applied before performing wrap/unwrap:
      * - allow_wrap / allow_unwrap flags
+     * - optional tenant allow-list (allowed_tenants) enforced per request
      * - optional suspend file (JSON: {"suspend":true,"reason":"...","until_ms":epoch_ms})
      * - optional artificial latency_ms for chaos/bench
      */
-    private function guardOperation(string $operation): void
+    private function guardOperation(string $operation, ?string $tenant = null): void
     {
         $key = 'allow_' . $operation;
         if (array_key_exists($key, $this->config) && $this->config[$key] === false) {
             throw new RuntimeException(sprintf('HSM %s disabled by policy.', $operation));
+        }
+
+        $allowedTenants = $this->config['allowed_tenants'] ?? null;
+        if (is_array($allowedTenants) && $allowedTenants !== []) {
+            if ($tenant === null || $tenant === '') {
+                throw new RuntimeException(sprintf('HSM %s blocked: tenant is required.', $operation));
+            }
+            if (!in_array($tenant, $allowedTenants, true)) {
+                throw new RuntimeException(sprintf('HSM %s blocked: tenant %s not allowed.', $operation, $tenant));
+            }
         }
 
         $suspend = $this->isSuspended();
@@ -56,7 +67,8 @@ final class HsmKmsClient implements KmsClientInterface
 
     public function wrap(string $context, Payload $payload): array
     {
-        $this->guardOperation('wrap');
+        $tenant = $this->extractTenant(null, $context);
+        $this->guardOperation('wrap', $tenant);
         $key = $this->loadKey();
         $cipher = $this->cipher();
         $nonce = random_bytes($this->nonceLength($cipher));
@@ -92,13 +104,17 @@ final class HsmKmsClient implements KmsClientInterface
         if ($tag !== null) {
             $meta['tag'] = base64_encode($tag);
         }
+        if ($tenant !== null) {
+            $meta['tenant'] = $tenant;
+        }
 
         return $meta;
     }
 
     public function unwrap(string $context, array $metadata): Payload
     {
-        $this->guardOperation('unwrap');
+        $tenant = $this->extractTenant($metadata, $context);
+        $this->guardOperation('unwrap', $tenant);
         $key = $this->loadKey();
         $cipher = (string)($metadata['cipher'] ?? $this->cipher());
         if (!$this->isCipherAllowed($cipher)) {
@@ -153,6 +169,8 @@ final class HsmKmsClient implements KmsClientInterface
             'nonce_bytes' => $this->nonceLength($this->cipher()),
             'tag_length' => $this->tagLength($this->cipher()),
             'allowed_ciphers' => $this->config['allow_ciphers'] ?? null,
+            'allowed_tenants' => $this->config['allowed_tenants'] ?? null,
+            'auth_mode' => $this->config['auth_mode'] ?? null,
             'fingerprint' => $fingerprint,
             'suspend' => $this->readSuspendState(),
             'latency_ms' => (int)($this->config['latency_ms'] ?? 0),
@@ -266,6 +284,18 @@ final class HsmKmsClient implements KmsClientInterface
         $configured = (int)($this->config['nonce_bytes'] ?? 12);
         $min = openssl_cipher_iv_length($cipher) ?: 12;
         return max($min, $configured, 12);
+    }
+
+    private function extractTenant(?array $metadata, string $context): ?string
+    {
+        $metaTenant = $metadata['tenant'] ?? null;
+        if (is_string($metaTenant) && $metaTenant !== '') {
+            return $metaTenant;
+        }
+        if (preg_match('/tenant[:=]([A-Za-z0-9._-]+)/', $context, $matches)) {
+            return $matches[1];
+        }
+        return null;
     }
 
     private function readSuspendState(): array
