@@ -100,6 +100,7 @@ php bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500
 php bin/crypto vault:coverage var/ingress.ndjson --table --top=5
 php bin/crypto manifest:validate contexts/core.json --json
 php bin/crypto key:rotate app.hsm keys/
+# runtime governance API (POST JSON): public/governance.php
 # agregace ze všech repozitářů (viz docs/COVERAGE-WORKFLOW.md)
 ./scripts/run-coverage-report.sh --table --top=5
 ```

@@ -19,7 +19,16 @@ final class DatabaseCryptoHooks
      */
     public function telemetrySnapshot(): array
     {
-        // No KMS/queue context here; we only emit intents/tag counters.
-        return TelemetryExporter::snapshot(kmsHealth: [], queue: null, collector: $this->collector);
+        $ciMeta = [
+            'ci' => getenv('CI') ?: null,
+            'repo' => getenv('GITHUB_REPOSITORY') ?: null,
+            'run_id' => getenv('GITHUB_RUN_ID') ?: null,
+            'workflow' => getenv('GITHUB_WORKFLOW') ?: null,
+            'job' => getenv('GITHUB_JOB') ?: null,
+        ];
+
+        $snapshot = TelemetryExporter::snapshot(kmsHealth: [], queue: null, collector: $this->collector);
+        $snapshot['ci'] = array_filter($ciMeta, static fn($v) => $v !== null && $v !== '');
+        return $snapshot;
     }
 }

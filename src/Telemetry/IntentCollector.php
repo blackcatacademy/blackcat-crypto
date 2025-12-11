@@ -21,6 +21,12 @@ final class IntentCollector
         'context' => [],
         'pii_cluster' => [],
         'workload' => [],
+        'decision' => [],
+        'result' => [],
+        'source' => [],
+        'region' => [],
+        'service' => [],
+        'error_class' => [],
     ];
 
     /** @var array<int,array<string,mixed>> */
@@ -56,6 +62,12 @@ final class IntentCollector
         $this->bumpTag('context', $payload['context'] ?? null);
         $this->bumpTag('pii_cluster', $payload['pii_cluster'] ?? null);
         $this->bumpTag('workload', $payload['workload'] ?? null);
+        $this->bumpTag('decision', $payload['decision'] ?? $payload['policy'] ?? null);
+        $this->bumpTag('result', $payload['result'] ?? null);
+        $this->bumpTag('source', $payload['source'] ?? null);
+        $this->bumpTag('region', $payload['region'] ?? null);
+        $this->bumpTag('service', $payload['service'] ?? $payload['component'] ?? null);
+        $this->bumpTag('error_class', $payload['error'] ?? $payload['error_class'] ?? null);
 
         $entry = [
             'intent' => $intent,
@@ -71,7 +83,11 @@ final class IntentCollector
             if ($this->archiveMaxBytes !== null) {
                 $this->rotateArchiveIfNeeded();
             }
-            $line = json_encode($entry) . PHP_EOL;
+            $meta = [
+                'host' => gethostname() ?: 'unknown',
+                'pid' => getmypid(),
+            ];
+            $line = json_encode(['meta' => $meta] + $entry) . PHP_EOL;
             @file_put_contents($this->archivePath, $line, FILE_APPEND | LOCK_EX);
         }
     }
