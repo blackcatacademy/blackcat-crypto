@@ -7,6 +7,8 @@
 - Intent telemetry now tags PII clusters and workload class; archives rotate via `archiveMaxBytes`/`archiveKeep`.
 - Telemetry exporter emits richer intent tag counts (Prometheus/OpenTelemetry/JSON).
 - Database crypto hook bridge exposes telemetry snapshots for DB-facing tooling, now enriched with CI metadata when present (e.g., GitHub Actions env).
+- Added governance intent logging + approval decisions (see `GovernanceApprovalService`) for low-risk unwrap/decrypt with audit tags.
+- HSM/KMS metadata now reports allowed ciphers, key version, and fingerprints; unwrap checks version by config.
 
 ### How to try
 - Enable intent collector: `BLACKCAT_CRYPTO_INTENTS=1 ./bin/crypto telemetry:intents --format=prom`.
