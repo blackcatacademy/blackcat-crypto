@@ -156,7 +156,7 @@ php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest
 
 ## Development (Docker-friendly)
 
-- Requirements: PHP 8.2+, ext-sodium, Composer.
+- Requirements: PHP 8.3+, ext-sodium, Composer.
 - Install deps + dev tools: `composer install`
 - Run tests: `composer test`
 - Static analysis: `composer stan`
