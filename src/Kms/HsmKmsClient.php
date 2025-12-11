@@ -29,8 +29,37 @@ final class HsmKmsClient implements KmsClientInterface
         return $version === null ? null : (string)$version;
     }
 
+    /**
+     * Guardrails applied before performing wrap/unwrap:
+     * - allow_wrap / allow_unwrap flags
+     * - optional suspend file (JSON: {"suspend":true,"reason":"...","until_ms":epoch_ms})
+     * - optional artificial latency_ms for chaos/bench
+     */
+    private function guardOperation(string $operation): void
+    {
+        $key = 'allow_' . $operation;
+        if (array_key_exists($key, $this->config) && $this->config[$key] === false) {
+            throw new RuntimeException(sprintf('HSM %s disabled by policy.', $operation));
+        }
+
+        $suspend = $this->readSuspendState();
+        if ($suspend['suspend'] ?? false) {
+            $until = $suspend['until_ms'] ?? null;
+            $reason = $suspend['reason'] ?? 'suspended';
+            if ($until === null || (int)$until > (int)(microtime(true) * 1000)) {
+                throw new RuntimeException(sprintf('HSM %s blocked: %s', $operation, $reason));
+            }
+        }
+
+        $latencyMs = (int)($this->config['latency_ms'] ?? 0);
+        if ($latencyMs > 0) {
+            usleep($latencyMs * 1000);
+        }
+    }
+
     public function wrap(string $context, Payload $payload): array
     {
+        $this->guardOperation('wrap');
         $key = $this->loadKey();
         $cipher = $this->cipher();
         $nonce = random_bytes($this->nonceLength($cipher));
@@ -72,6 +101,7 @@ final class HsmKmsClient implements KmsClientInterface
 
     public function unwrap(string $context, array $metadata): Payload
     {
+        $this->guardOperation('unwrap');
         $key = $this->loadKey();
         $cipher = (string)($metadata['cipher'] ?? $this->cipher());
         if (!$this->isCipherAllowed($cipher)) {
@@ -127,6 +157,8 @@ final class HsmKmsClient implements KmsClientInterface
             'tag_length' => $this->tagLength($this->cipher()),
             'allowed_ciphers' => $this->config['allow_ciphers'] ?? null,
             'fingerprint' => $fingerprint,
+            'suspend' => $this->readSuspendState(),
+            'latency_ms' => (int)($this->config['latency_ms'] ?? 0),
         ];
     }
 
@@ -219,5 +251,22 @@ final class HsmKmsClient implements KmsClientInterface
         $configured = (int)($this->config['nonce_bytes'] ?? 12);
         $min = openssl_cipher_iv_length($cipher) ?: 12;
         return max($min, $configured, 12);
+    }
+
+    private function readSuspendState(): array
+    {
+        $path = $this->config['suspend_path'] ?? null;
+        if ($path === null) {
+            return ['suspend' => false];
+        }
+        if (!is_readable($path)) {
+            return ['suspend' => false, 'error' => 'suspend_path not readable'];
+        }
+        $raw = (string)file_get_contents($path);
+        $json = json_decode($raw, true);
+        if (!is_array($json)) {
+            return ['suspend' => false, 'error' => 'invalid suspend file'];
+        }
+        return $json + ['suspend' => false];
     }
 }
