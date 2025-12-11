@@ -26,7 +26,19 @@ final class KeyRotateCommand implements CommandInterface
         $dir = $positionals[1] ?? null;
         $format = strtolower((string)($options['format'] ?? 'raw'));
         $manifestPath = $options['manifest'] ?? getenv('BLACKCAT_CRYPTO_MANIFEST') ?: null;
+        $requestedVersion = isset($options['version']) && is_numeric($options['version']) ? (int)$options['version'] : null;
+        $dryRun = array_key_exists('dry-run', $options) || array_key_exists('dry', $options);
+        $jsonOut = array_key_exists('json', $options);
+        $writeMeta = !array_key_exists('no-meta', $options);
         $length = $this->deriveLength($options, $manifestPath, $slot);
+
+        if ($manifestPath && $slot && is_file($manifestPath)) {
+            $manifest = json_decode((string)file_get_contents($manifestPath), true);
+            if (!isset($manifest['slots'][$slot])) {
+                fwrite(STDERR, "Slot {$slot} not found in manifest {$manifestPath}\n");
+                return 1;
+            }
+        }
 
         if (!in_array($format, ['raw', 'hex', 'base64'], true)) {
             fwrite(STDERR, "Invalid format {$format}; use raw|hex|base64\n");
@@ -34,7 +46,7 @@ final class KeyRotateCommand implements CommandInterface
         }
 
         if ($slot === null || $dir === null) {
-            fwrite(STDERR, "Usage: key:rotate <slot> <dir> [--length=32] [--format=raw|hex|base64] [--manifest=path]\n");
+            fwrite(STDERR, "Usage: key:rotate <slot> <dir> [--length=32] [--format=raw|hex|base64] [--manifest=path] [--version=N] [--dry-run] [--json] [--no-meta]\n");
             return 1;
         }
 
@@ -48,18 +60,50 @@ final class KeyRotateCommand implements CommandInterface
             return 1;
         }
 
+        $version = $requestedVersion ?? $this->nextVersion($dir, $slot);
         $bytes = random_bytes($length);
         [$content, $ext] = $this->formatKey($bytes, $format);
-        $file = $this->buildFilename($dir, $slot, $ext);
+        $file = $this->buildFilename($dir, $slot, $version, $ext);
 
-        if (file_put_contents($file, $content) === false) {
-            $this->logger->error('key-rotate-write-failed', ['slot' => $slot, 'file' => $file]);
-            fwrite(STDERR, "Failed to write key file\n");
-            return 1;
+        $meta = [
+            'slot' => $slot,
+            'version' => $version,
+            'format' => $format,
+            'length' => $length,
+            'manifest' => $manifestPath,
+            'created_at' => date(DATE_ATOM),
+            'sha256' => hash('sha256', $content),
+        ];
+
+        if (!$dryRun) {
+            if (file_put_contents($file, $content) === false) {
+                $this->logger->error('key-rotate-write-failed', ['slot' => $slot, 'file' => $file]);
+                fwrite(STDERR, "Failed to write key file\n");
+                return 1;
+            }
+            @chmod($file, 0600);
+            if ($writeMeta) {
+                $metaPath = $file . '.meta.json';
+                file_put_contents($metaPath, json_encode($meta, JSON_PRETTY_PRINT));
+                @chmod($metaPath, 0600);
+            }
         }
-        @chmod($file, 0600);
-        $this->logger->info('key-rotated', ['slot' => $slot, 'file' => $file, 'length' => $length, 'format' => $format]);
-        echo "Rotated {$slot} -> {$file} ({$length} bytes, {$format})\n";
+
+        $this->logger->info('key-rotated', ['slot' => $slot, 'file' => $file, 'length' => $length, 'format' => $format, 'version' => $version, 'dry_run' => $dryRun]);
+        $output = [
+            'slot' => $slot,
+            'version' => $version,
+            'file' => $file,
+            'length' => $length,
+            'format' => $format,
+            'dry_run' => $dryRun,
+        ];
+        if ($jsonOut) {
+            echo json_encode($output, JSON_PRETTY_PRINT) . "\n";
+        } else {
+            $note = $dryRun ? 'DRY-RUN' : 'OK';
+            echo "[{$note}] Rotated {$slot} -> {$file} (v{$version}, {$length} bytes, {$format})\n";
+        }
         return 0;
     }
 
@@ -82,12 +126,12 @@ final class KeyRotateCommand implements CommandInterface
         return [$options, $positionals];
     }
 
-    private function buildFilename(string $dir, string $slot, string $ext = 'key'): string
+    private function buildFilename(string $dir, string $slot, int $version, string $ext = 'key'): string
     {
         $safeSlot = preg_replace('~[^A-Za-z0-9_.-]+~', '_', $slot) ?: 'slot';
         $timestamp = date('Ymd_His');
         $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
-        return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . "{$safeSlot}_{$timestamp}_{$suffix}.{$ext}";
+        return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . "{$safeSlot}_v{$version}_{$timestamp}_{$suffix}.{$ext}";
     }
 
     /**
@@ -120,5 +164,21 @@ final class KeyRotateCommand implements CommandInterface
         }
 
         return 32;
+    }
+
+    private function nextVersion(string $dir, string $slot): int
+    {
+        if (!is_dir($dir)) {
+            return 1;
+        }
+        $safeSlot = preg_replace('~[^A-Za-z0-9_.-]+~', '_', $slot) ?: $slot;
+        $pattern = rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $safeSlot . '_v*.*';
+        $max = 0;
+        foreach (glob($pattern) ?: [] as $file) {
+            if (preg_match('~_v(\d+)_~', basename($file), $m)) {
+                $max = max($max, (int)$m[1]);
+            }
+        }
+        return $max + 1;
     }
 }

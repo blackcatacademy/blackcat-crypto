@@ -64,8 +64,8 @@ final class ManifestValidateCommand implements CommandInterface
             return [false, ['Manifest is not valid JSON']];
         }
         $issues = [];
-        if (isset($data['version']) && (!is_int($data['version']) || $data['version'] < 1)) {
-            $issues[] = 'version must be a positive integer when present';
+        if (!isset($data['version']) || !is_int($data['version']) || $data['version'] < 1) {
+            $issues[] = 'version is required and must be a positive integer';
         }
 
         $slots = $data['slots'] ?? null;
@@ -74,8 +74,12 @@ final class ManifestValidateCommand implements CommandInterface
             $slots = [];
         }
         $seenContexts = [];
+        $contextToSlot = [];
         $allowedTypes = ['aes', 'aead', 'hmac', 'hybrid', 'wrap', 'rsa'];
         foreach ($slots as $slotName => $definition) {
+            if (!is_string($slotName) || !preg_match('/^[a-z0-9._-]+$/', $slotName)) {
+                $issues[] = "slot {$slotName} name must match /^[a-z0-9._-]+$/";
+            }
             if (!is_array($definition)) {
                 $issues[] = "slot {$slotName} is not an object";
                 continue;
@@ -88,9 +92,17 @@ final class ManifestValidateCommand implements CommandInterface
             }
 
             $length = $definition['length'] ?? null;
-            if (in_array($type, ['aes', 'aead', 'hmac'], true)) {
-                if (!is_int($length) || $length < 16 || $length > 256) {
-                    $issues[] = "slot {$slotName} length must be 16-256 for type {$type}";
+            if ($type !== null) {
+                if (in_array($type, ['aes', 'aead', 'hmac'], true)) {
+                    if (!is_int($length) || $length < 16 || $length > 256 || $length % 8 !== 0) {
+                        $issues[] = "slot {$slotName} length must be 16-256 and divisible by 8 for type {$type}";
+                    }
+                } elseif (in_array($type, ['wrap', 'hybrid'], true)) {
+                    if (!is_int($length) || $length < 24) {
+                        $issues[] = "slot {$slotName} length must be >=24 for type {$type}";
+                    }
+                } elseif ($type === 'rsa' && (!is_int($length) || $length < 2048)) {
+                    $issues[] = "slot {$slotName} length must be >=2048 for type rsa";
                 }
             }
 
@@ -99,38 +111,68 @@ final class ManifestValidateCommand implements CommandInterface
                 $issues[] = "slot {$slotName} must declare contexts";
             } else {
                 foreach ($contexts as $ctx) {
-                    if (!is_string($ctx) || trim($ctx) === '') {
-                        $issues[] = "slot {$slotName} has invalid context entry";
+                    if (!is_string($ctx) || !preg_match('/^[a-z0-9._-]+$/', $ctx)) {
+                        $issues[] = "slot {$slotName} has invalid context entry (must match /^[a-z0-9._-]+$/)";
                         continue;
                     }
                     $seenContexts[] = $ctx;
+                    $contextToSlot[$ctx] = $slotName;
                 }
             }
 
+            $kmsWeightTotal = 0;
+            $hasWeight = false;
+            $seenKmsIds = [];
             if (isset($definition['kms'])) {
                 if (!is_array($definition['kms'])) {
                     $issues[] = "slot {$slotName} kms must be an array";
                 } else {
+                    if (in_array($type, ['wrap', 'hybrid'], true) && $definition['kms'] === []) {
+                        $issues[] = "slot {$slotName} requires at least one kms entry for type {$type}";
+                    }
                     foreach ($definition['kms'] as $idx => $kms) {
                         if (!is_array($kms)) {
                             $issues[] = "slot {$slotName} kms entry #{$idx} must be an object";
                             continue;
                         }
-                        if (empty($kms['id']) || !is_string($kms['id'])) {
+                        $kmsId = $kms['id'] ?? null;
+                        if (empty($kmsId) || !is_string($kmsId)) {
                             $issues[] = "slot {$slotName} kms entry #{$idx} missing id";
+                        } elseif (isset($seenKmsIds[$kmsId])) {
+                            $issues[] = "slot {$slotName} kms entry #{$idx} duplicate id '{$kmsId}'";
+                        } else {
+                            $seenKmsIds[$kmsId] = true;
                         }
-                        if (isset($kms['weight']) && (!is_int($kms['weight']) || $kms['weight'] <= 0)) {
-                            $issues[] = "slot {$slotName} kms entry #{$idx} weight must be positive int";
+                        $kmsType = $kms['type'] ?? 'http';
+                        if (!in_array($kmsType, ['http', 'hsm', 'local'], true)) {
+                            $issues[] = "slot {$slotName} kms entry #{$idx} type must be http|hsm|local";
+                        }
+                        if (isset($kms['weight'])) {
+                            $hasWeight = true;
+                            if (!is_int($kms['weight']) || $kms['weight'] <= 0) {
+                                $issues[] = "slot {$slotName} kms entry #{$idx} weight must be positive int";
+                            } else {
+                                $kmsWeightTotal += $kms['weight'];
+                            }
                         }
                         if (isset($kms['contexts']) && is_array($kms['contexts'])) {
                             foreach ($kms['contexts'] as $ctx) {
-                                if (!is_string($ctx) || trim($ctx) === '') {
+                                if (!is_string($ctx) || !preg_match('/^[a-z0-9._-]+$/', $ctx)) {
                                     $issues[] = "slot {$slotName} kms entry #{$idx} has invalid context";
+                                } elseif (!in_array($ctx, $contexts ?? [], true)) {
+                                    $issues[] = "slot {$slotName} kms entry #{$idx} context {$ctx} not in slot contexts";
                                 }
                             }
+                        } elseif (isset($kms['contexts']) && !is_array($kms['contexts'])) {
+                            $issues[] = "slot {$slotName} kms entry #{$idx} contexts must be an array when present";
                         }
                     }
+                    if ($hasWeight && $kmsWeightTotal !== 100) {
+                        $issues[] = "slot {$slotName} kms weights must sum to 100 when provided";
+                    }
                 }
+            } elseif (in_array($type, ['wrap', 'hybrid'], true)) {
+                $issues[] = "slot {$slotName} requires kms configuration for type {$type}";
             }
         }
 

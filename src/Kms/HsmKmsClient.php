@@ -27,8 +27,8 @@ final class HsmKmsClient implements KmsClientInterface
     {
         $key = $this->loadKey();
         $cipher = $this->cipher();
-        $nonce = random_bytes(12);
-        $aad = $this->aad();
+        $nonce = random_bytes($this->nonceLength($cipher));
+        $aad = $this->aad($context);
         $tagLength = $this->tagLength($cipher);
         $tag = null;
 
@@ -52,6 +52,7 @@ final class HsmKmsClient implements KmsClientInterface
             'keyId' => $this->id(),
             'innerNonce' => base64_encode($payload->nonce),
             'cipher' => $cipher,
+            'tagLength' => $tagLength,
         ];
         if ($tag !== null) {
             $meta['tag'] = base64_encode($tag);
@@ -64,13 +65,16 @@ final class HsmKmsClient implements KmsClientInterface
     {
         $key = $this->loadKey();
         $cipher = (string)($metadata['cipher'] ?? $this->cipher());
+        if (!$this->isCipherAllowed($cipher)) {
+            throw new RuntimeException('Cipher ' . $cipher . ' is not allowed for HSM unwrap.');
+        }
         $ciphertext = base64_decode((string)($metadata['ciphertext'] ?? ''), true);
         $nonce = base64_decode((string)($metadata['nonce'] ?? ''), true);
         $tag = array_key_exists('tag', $metadata) ? base64_decode((string)$metadata['tag'], true) : null;
         if ($ciphertext === false || $nonce === false) {
             throw new RuntimeException('HSM unwrap metadata invalid for ' . $context);
         }
-        $aad = $this->aad();
+        $aad = $this->aad($context);
         $plaintext = openssl_decrypt(
             $ciphertext,
             $cipher,
@@ -94,33 +98,57 @@ final class HsmKmsClient implements KmsClientInterface
             'client' => $this->id(),
             'status' => 'ok',
             'origin' => 'local-hsm',
+            'cipher' => $this->cipher(),
+            'key_bytes' => $this->keyLength(),
+            'aad_context' => (bool)($this->config['aad_context'] ?? false),
+            'nonce_bytes' => $this->nonceLength($this->cipher()),
+            'tag_length' => $this->tagLength($this->cipher()),
         ];
     }
 
     private function loadKey(): string
     {
         $secret = (string)($this->config['secret'] ?? '');
+        if ($secret === '' && isset($this->config['secret_path'])) {
+            $path = (string)$this->config['secret_path'];
+            if (!is_readable($path)) {
+                throw new RuntimeException('HsmKmsClient secret_path is not readable: ' . $path);
+            }
+            $secret = trim((string)file_get_contents($path));
+        }
         if ($secret === '') {
-            throw new RuntimeException('HsmKmsClient requires a base64 secret.');
+            throw new RuntimeException('HsmKmsClient requires a base64 secret (inline or secret_path).');
         }
         $bytes = base64_decode($secret, true);
         if ($bytes === false) {
             throw new RuntimeException('HsmKmsClient secret must be base64-encoded.');
         }
-        $minLen = (int)($this->config['key_bytes'] ?? 32);
-        if (strlen($bytes) < $minLen) {
-            throw new RuntimeException(sprintf('HsmKmsClient secret must be at least %d bytes.', $minLen));
+        $minLen = $this->keyLength();
+        $len = strlen($bytes);
+        if ($len < $minLen) {
+            throw new RuntimeException(sprintf('HsmKmsClient secret must be at least %d bytes, got %d.', $minLen, $len));
         }
         return substr($bytes, 0, $minLen);
     }
 
+    private function keyLength(): int
+    {
+        return (int)($this->config['key_bytes'] ?? 32);
+    }
+
     private function cipher(): string
     {
-        $cipher = (string)($this->config['cipher'] ?? 'aes-256-gcm');
-        if (!in_array($cipher, openssl_get_cipher_methods(), true)) {
-            throw new RuntimeException('Cipher ' . $cipher . ' is not available.');
+        $preferred = $this->config['preferred_ciphers'] ?? null;
+        $candidates = is_array($preferred) && $preferred !== []
+            ? $preferred
+            : [(string)($this->config['cipher'] ?? 'aes-256-gcm')];
+        foreach ($candidates as $cipher) {
+            $cipher = (string)$cipher;
+            if ($this->isCipherAllowed($cipher)) {
+                return $cipher;
+            }
         }
-        return $cipher;
+        throw new RuntimeException('No allowed cipher is available for HsmKmsClient.');
     }
 
     private function tagLength(string $cipher): int
@@ -136,8 +164,30 @@ final class HsmKmsClient implements KmsClientInterface
         return stripos($cipher, 'gcm') !== false || stripos($cipher, 'ccm') !== false;
     }
 
-    private function aad(): string
+    private function isCipherAllowed(string $cipher): bool
     {
-        return (string)($this->config['aad'] ?? '');
+        if (!in_array($cipher, openssl_get_cipher_methods(), true)) {
+            return false;
+        }
+        $allowList = $this->config['allow_ciphers'] ?? null;
+        if ($allowList === null) {
+            return true;
+        }
+        return in_array($cipher, (array)$allowList, true);
+    }
+
+    private function aad(string $context): string
+    {
+        $base = (string)($this->config['aad'] ?? '');
+        $withContext = (bool)($this->config['aad_context'] ?? false);
+        $separator = (string)($this->config['aad_separator'] ?? '|');
+        return $withContext ? $base . $separator . $context : $base;
+    }
+
+    private function nonceLength(string $cipher): int
+    {
+        $configured = (int)($this->config['nonce_bytes'] ?? 12);
+        $min = openssl_cipher_iv_length($cipher) ?: 12;
+        return max($min, $configured, 12);
     }
 }

@@ -18,6 +18,7 @@ final class TelemetryExporter
         $timestamp = time();
         $clients = [];
         $up = 0;
+        $suspendedTotal = 0;
         foreach ($kmsHealth as $entry) {
             $clientId = (string)($entry['client'] ?? 'unknown');
             $statusData = $entry['status'] ?? [];
@@ -27,10 +28,15 @@ final class TelemetryExporter
             if (strtolower($status) === 'ok') {
                 $up++;
             }
+            $suspended = isset($entry['suspended']) && $entry['suspended'] === true;
+            if ($suspended) {
+                $suspendedTotal++;
+            }
             $clients[] = [
                 'id' => $clientId,
                 'status' => $status,
                 'details' => $statusData,
+                'suspended' => $suspended,
             ];
         }
         $queueMetrics = self::queueMetrics($queue);
@@ -38,6 +44,7 @@ final class TelemetryExporter
         return [
             'timestamp' => $timestamp,
             'kms_up_total' => $up,
+            'kms_suspended_total' => $suspendedTotal,
             'kms_clients' => $clients,
             'wrap_queue' => $queueMetrics,
             'intents' => $intents,
@@ -63,6 +70,9 @@ final class TelemetryExporter
                 $value
             );
         }
+        $lines[] = '# HELP blackcat_kms_suspended_total Number of suspended KMS clients.';
+        $lines[] = '# TYPE blackcat_kms_suspended_total gauge';
+        $lines[] = 'blackcat_kms_suspended_total ' . (int)($snapshot['kms_suspended_total'] ?? 0);
         $queue = $snapshot['wrap_queue'] ?? [];
         $lines[] = '# HELP blackcat_wrap_queue_backlog Number of pending wrap jobs.';
         $lines[] = '# TYPE blackcat_wrap_queue_backlog gauge';
@@ -73,6 +83,21 @@ final class TelemetryExporter
         $lines[] = '# HELP blackcat_wrap_queue_oldest_age_seconds Age of the oldest pending wrap job.';
         $lines[] = '# TYPE blackcat_wrap_queue_oldest_age_seconds gauge';
         $lines[] = 'blackcat_wrap_queue_oldest_age_seconds ' . (int)($queue['oldest_age_seconds'] ?? 0);
+
+        $intents = $snapshot['intents']['counts'] ?? [];
+        $lines[] = '# HELP blackcat_intents_total Total crypto intents recorded by type.';
+        $lines[] = '# TYPE blackcat_intents_total counter';
+        if (empty($intents)) {
+            $lines[] = 'blackcat_intents_total 0';
+        } else {
+            foreach ($intents as $intent => $count) {
+                $lines[] = sprintf(
+                    'blackcat_intents_total{intent="%s"} %d',
+                    self::escapeLabel((string)$intent),
+                    (int)$count
+                );
+            }
+        }
         return implode("\n", $lines) . "\n";
     }
 

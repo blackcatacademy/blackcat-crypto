@@ -13,6 +13,7 @@ Modulární šifrovací engine poskytující jednotné rozhraní pro veškerou p
 - **Pohodlné integrace** – jednoduché fasády `CryptoManager::encryptContext('users.pii', $plaintext)` nebo `HmacService::sign('email-reset', $payload)` pro konzumenty. Žádná práce s klíči v cílových repozitářích.
 - **Rotace bez bolesti** – `Queue\RotationCoordinator` spolu s wrap queue umožní rewrap (rotaci) citlivých dat asynchronně bez dopadu na aplikace.
 - **Observabilita a governance** – wrap queue lze persistovat (`FileWrapQueue`, `BLACKCAT_CRYPTO_WRAP_QUEUE=file:///path`) a CLI/telemetry příkazy (`wrap:queue`, `metrics:export`) poskytují JSON i Prometheus metriky o backlogu a zdraví KMS clusteru.
+- **Intent telemetry** – aplikace můžou publikovat „intents“ (druh požadavku/operace); `telemetry:intents` vrací jejich počty i poslední položky (JSON/Prometheus, metriku `blackcat_intents_total`).
 
 ## Struktura repozitáře
 
@@ -91,6 +92,7 @@ php bin/crypto vault:migrate storage/files/foo.enc storage/files/foo.envelope
 php bin/crypto vault:decrypt storage/files/foo.enc --output=/tmp/foo.txt
 php bin/crypto metrics:export prom
 php bin/crypto telemetry:sse --interval=5
+php bin/crypto telemetry:intents --format=prom --limit=25
 php bin/crypto kms:watchdog --interval=30
 php bin/crypto kms:suspend hsm-primary 600
 php bin/crypto kms:resume hsm-primary
