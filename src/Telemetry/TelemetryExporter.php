@@ -267,6 +267,83 @@ final class TelemetryExporter
     }
 
     /**
+     * Minimal OTLP/JSON logs payload for recent intents.
+     *
+     * @param array<string,mixed> $snapshot
+     * @return array<string,mixed>
+     */
+    public static function asOpenTelemetryLogs(array $snapshot, string $serviceName = 'blackcat-crypto', string $scopeName = 'blackcat.crypto'): array
+    {
+        $now = (int)floor(microtime(true) * 1_000_000_000);
+        $recent = $snapshot['intents']['recent'] ?? [];
+        if (!is_array($recent)) {
+            $recent = [];
+        }
+        $recent = array_slice(array_values($recent), -25);
+
+        $logRecords = [];
+        foreach ($recent as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $tsVal = $entry['timestamp'] ?? $entry['ts'] ?? null;
+            $ts = $tsVal !== null ? (int)$tsVal * 1_000_000_000 : $now;
+            $intent = (string)($entry['intent'] ?? 'intent');
+            $tags = is_array($entry['tags'] ?? null) ? $entry['tags'] : [];
+            $error = (string)($entry['error'] ?? ($tags['error_class'] ?? ''));
+            $severityNumber = $error !== '' ? 17 : 9; // ERROR vs INFO
+            $severityText = $error !== '' ? 'ERROR' : 'INFO';
+
+            $attrs = [
+                'intent' => $intent,
+                'action' => (string)($tags['action'] ?? ''),
+                'tenant' => (string)($tags['tenant'] ?? ''),
+                'algorithm' => (string)($tags['algorithm'] ?? ''),
+                'route' => (string)($tags['route'] ?? ''),
+                'decision' => (string)($tags['decision'] ?? ($entry['decision'] ?? '')),
+                'result' => (string)($tags['result'] ?? ''),
+                'service' => (string)($tags['service'] ?? $serviceName),
+                'region' => (string)($tags['region'] ?? ''),
+                'workload' => (string)($tags['workload'] ?? ''),
+                'source' => (string)($tags['source'] ?? ''),
+            ];
+            if ($error !== '') {
+                $attrs['error'] = $error;
+            }
+
+            $logRecords[] = [
+                'timeUnixNano' => $ts,
+                'observedTimeUnixNano' => $ts,
+                'severityNumber' => $severityNumber,
+                'severityText' => $severityText,
+                'body' => ['stringValue' => $intent],
+                'attributes' => self::attributes(array_filter($attrs, static fn($v) => $v !== '')),
+            ];
+        }
+
+        return [
+            'resourceLogs' => [
+                [
+                    'resource' => [
+                        'attributes' => self::attributes([
+                            'service.name' => $serviceName,
+                        ]),
+                    ],
+                    'scopeLogs' => [
+                        [
+                            'scope' => [
+                                'name' => $scopeName,
+                                'version' => '1.0.0',
+                            ],
+                            'logRecords' => $logRecords,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public static function queueMetrics(?WrapQueueInterface $queue, int $peekLimit = 50): array
