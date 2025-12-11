@@ -39,7 +39,7 @@ final class ManifestDiffCommandTest extends TestCase
         $output = ob_get_clean();
 
         self::assertSame(2, $exit);
-        self::assertStringContainsString('slots_only_in_from', strtoupper($output));
+        self::assertStringContainsString('SLOTS_ONLY_IN_FROM', strtoupper($output));
 
         @unlink($from);
         @unlink($to);

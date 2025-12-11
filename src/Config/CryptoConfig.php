@@ -22,7 +22,8 @@ final class CryptoConfig
 
     public static function fromEnv(array $env = []): self
     {
-        $env = $env ?: $_ENV + $_SERVER;
+        // merge all possible env sources so putenv/$_ENV/$_SERVER are seen in tests and runtime
+        $env = $env ?: array_merge((array)getenv(), $_ENV, $_SERVER);
         $keysDir = $env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null;
         $kms = json_decode($env['BLACKCAT_KMS_ENDPOINTS'] ?? '[]', true) ?: [];
         $rotation = json_decode($env['BLACKCAT_CRYPTO_ROTATION'] ?? '[]', true) ?: [];
@@ -49,6 +50,27 @@ final class CryptoConfig
 
         if (!empty($manifestRotation)) {
             $rotation = array_replace($manifestRotation, $rotation);
+        }
+
+        // Fallback: parse comma-separated KMS endpoints like "a=http://host:7001,b=hsm://slot1".
+        if ($kms === [] && isset($env['BLACKCAT_KMS_ENDPOINTS']) && $env['BLACKCAT_KMS_ENDPOINTS'] !== '') {
+            $pairs = array_filter(array_map('trim', explode(',', (string)$env['BLACKCAT_KMS_ENDPOINTS'])));
+            foreach ($pairs as $pair) {
+                if (!str_contains($pair, '=')) {
+                    continue;
+                }
+                [$id, $endpoint] = array_map('trim', explode('=', $pair, 2));
+                if ($id === '' || $endpoint === '') {
+                    continue;
+                }
+                $scheme = parse_url($endpoint, PHP_URL_SCHEME) ?: '';
+                $type = $scheme === 'hsm' ? 'hsm' : 'http';
+                $kms[] = [
+                    'id' => $id,
+                    'endpoint' => $endpoint,
+                    'type' => $type,
+                ];
+            }
         }
 
         return new self(

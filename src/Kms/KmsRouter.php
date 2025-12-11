@@ -23,6 +23,14 @@ final class KmsRouter
         $this->loadSuspensions();
 
         foreach ($config as $definition) {
+            // Ignore non-client config nodes (e.g., cache/suspend metadata).
+            if (!is_array($definition)) {
+                continue;
+            }
+            if (!isset($definition['type']) && !isset($definition['class'])) {
+                continue;
+            }
+
             $client = $this->clientFromDefinition($definition);
             $this->clients[] = [
                 'client' => $client,
@@ -35,6 +43,10 @@ final class KmsRouter
     public function wrap(string $context, Payload $payload, array $bindings, array $options = []): array
     {
         $client = $this->pickClient($context, $options['preferredClient'] ?? null);
+        if ($client === null) {
+            return $this->localMetadata($payload);
+        }
+
         $meta = $client->wrap($context, $payload);
         $meta['client'] = $client->id();
         return $meta;
@@ -43,7 +55,22 @@ final class KmsRouter
     public function unwrap(string $context, array $metadata): Payload
     {
         $clientId = $metadata['client'] ?? null;
-        foreach ($this->clients as $client) {
+        if ($clientId === null || $clientId === 'local') {
+            $cipher = (string)($metadata['ciphertext'] ?? '');
+            $nonce = (string)($metadata['nonce'] ?? '');
+            $cipherDecoded = base64_decode($cipher, true);
+            $nonceDecoded = base64_decode($nonce, true);
+            if ($cipherDecoded === false || $nonceDecoded === false) {
+                throw new \RuntimeException('Invalid local metadata encoding');
+            }
+            return new Payload(
+                $cipherDecoded,
+                $nonceDecoded,
+                (string)($metadata['keyId'] ?? '')
+            );
+        }
+        foreach ($this->clients as $entry) {
+            $client = $entry['client'];
             if ($client->id() === $clientId) {
                 return $client->unwrap($context, $metadata);
             }
@@ -101,7 +128,7 @@ final class KmsRouter
         return $out;
     }
 
-    private function pickClient(string $context, ?string $preferred): KmsClientInterface
+    private function pickClient(string $context, ?string $preferred): ?KmsClientInterface
     {
         if ($preferred !== null) {
             foreach ($this->clients as $entry) {
@@ -112,7 +139,7 @@ final class KmsRouter
         }
         $candidates = $this->filterByContext($context);
         if ($candidates === []) {
-            throw new \RuntimeException('No KMS clients configured');
+            return null;
         }
         $total = array_sum(array_map(fn($entry) => $entry['weight'], $candidates));
         $rand = random_int(1, $total);
@@ -165,6 +192,18 @@ final class KmsRouter
             return new HsmKmsClient($definition);
         }
         return new HttpKmsClient($definition);
+    }
+
+    private function localMetadata(Payload $payload): array
+    {
+        return [
+            'client' => 'local',
+            // Store as base64 to keep envelope JSON-serializable.
+            'ciphertext' => base64_encode($payload->ciphertext),
+            'nonce' => base64_encode($payload->nonce),
+            'keyId' => $payload->keyId,
+            'wrapCount' => $payload->meta['wrapCount'] ?? 0,
+        ];
     }
 
     private function loadSuspensions(): void

@@ -111,8 +111,20 @@ final class CryptoManager
     {
         $localKey = $this->keyRegistry->deriveAeadKey($context);
         $payload = $this->aead->encrypt($plaintext, $context, $localKey);
-        $wrapCount = ($options['wrapCount'] ?? 0) + 1;
-        $wrapped = $this->kms->wrap($context, $payload, $this->keyRegistry->kmsBindings($context), ['preferredClient' => $options['preferredClient'] ?? null]);
+        $wrapCount = $options['wrapCount'] ?? 0;
+
+        $wrapped = $this->kms->wrap(
+            $context,
+            $payload,
+            $this->keyRegistry->kmsBindings($context),
+            ['preferredClient' => $options['preferredClient'] ?? null]
+        );
+
+        // Pokud používáme reálný KMS, zvyšte wrap count; lokální metadata pouze zachovají předané číslo.
+        if (($wrapped['client'] ?? 'local') !== 'local') {
+            $wrapCount++;
+        }
+
         $wrapped['wrapCount'] = $wrapCount;
         $envelope = Envelope::fromLayers($payload, $wrapped, $context);
         $this->recordIntent('encrypt_context', [
@@ -127,14 +139,18 @@ final class CryptoManager
 
     /**
      * Decrypt envelope – využívá metadata pro výběr správného lokálního klíče i KMS unwrap.
+     *
+     * @param array{skipRotation?:bool} $options
      */
-    public function decryptContext(string $context, string $serializedEnvelope): string
+    public function decryptContext(string $context, string $serializedEnvelope, array $options = []): string
     {
         $envelope = Envelope::decode($serializedEnvelope);
         $wrapped = $this->kms->unwrap($context, $envelope->kmsMetadata);
         $localKey = $this->keyRegistry->deriveAeadKey($context, $envelope->local->keyId);
         $plaintext = $this->aead->decrypt($wrapped, $context, $localKey);
-        $this->maybeScheduleRotation($envelope);
+        if (!($options['skipRotation'] ?? false)) {
+            $this->maybeScheduleRotation($envelope);
+        }
         $this->recordIntent('decrypt_context', [
             'context' => $context,
             'localKeyId' => $envelope->local->keyId,
@@ -170,9 +186,16 @@ final class CryptoManager
         return $plaintext;
     }
 
-    public function decryptLocalWithAnyKey(string $slot, string $nonce, string $ciphertext): ?string
+    public function decryptLocalWithAnyKey(string $slot, string $nonce, string $ciphertext, ?string $preferredKeyId = null): ?string
     {
         $materials = $this->keyRegistry->all($slot);
+        if ($preferredKeyId !== null) {
+            usort($materials, static function ($a, $b) use ($preferredKeyId): int {
+                $aPreferred = ($a->id === $preferredKeyId) ? 0 : 1;
+                $bPreferred = ($b->id === $preferredKeyId) ? 0 : 1;
+                return $aPreferred <=> $bPreferred;
+            });
+        }
         foreach ($materials as $material) {
             try {
                 $payload = new Payload($ciphertext, $nonce, $material->id);
@@ -184,6 +207,25 @@ final class CryptoManager
                     'key' => $material->id,
                     'error' => $e->getMessage(),
                 ]);
+                // Legacy payloads (v2) were encrypted without AAD; try an empty AAD as a fallback.
+                try {
+                    $payload = new Payload($ciphertext, $nonce, $material->id);
+                    $key = $this->keyRegistry->deriveAeadKey($slot, $material->id);
+                    $out = $this->aead->decrypt($payload, '', $key);
+                    $this->recordIntent('decrypt_local', [
+                        'slot' => $slot,
+                        'keyId' => $material->id,
+                        'success' => true,
+                        'aad' => 'empty',
+                    ]);
+                    return $out;
+                } catch (\Throwable $fallback) {
+                    $this->logger?->debug('decryptLocalWithAnyKey empty-AAD fallback failed', [
+                        'slot' => $slot,
+                        'key' => $material->id,
+                        'error' => $fallback->getMessage(),
+                    ]);
+                }
                 continue;
             }
         }

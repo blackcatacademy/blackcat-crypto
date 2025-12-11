@@ -61,6 +61,7 @@ Repo je nyní na Stage 9.
 - Self-service portal (napojený na `blackcat-governance`, `blackcat-support`) pro správu manifestů, approvals, regeneraci CLI/SDK artefaktů.
 - Vault policy enforcement: `vault:report --fail-on-unused` + API/feeds do compliance dashboards.
 - Implementováno: HSM shim (`HsmKmsClient`), CLI pro rotace klíčů (`key:rotate`), validátor manifestů (`manifest:validate`), KMS router umí preferovat HSM klienta a CLI `kms:list|suspend|resume` + `describe()` pokrytí.
+- Další na řadě: intent exporty do OpenTelemetry, governanční API pro auto-aproval low-risk unwraps, rollout hooků v `blackcat-database-crypto` (lint + telemetry v CI).
 
 ## Stage 12 – Autonomous Compliance Mesh (planned)
 - Automatizované enforcement runbooks: pokud manifest/DB driftuje, orchestrace spouští `vault:migrate` / wrap queue / ticketing.

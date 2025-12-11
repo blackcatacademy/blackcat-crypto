@@ -41,9 +41,10 @@ final class VaultDecryptCommand implements CommandInterface
         $context = (string)($options['context'] ?? 'core.vault');
 
         $manager = CoreCryptoBridge::boot();
+        $preferredKeyId = $parsed['keyId'] ?? null;
         $plaintext = $parsed['mode'] === 'single'
-            ? $manager->decryptLocalWithAnyKey($context, $parsed['nonce'], $parsed['cipher'])
-            : $this->decryptStream($parsed, CoreCryptoBridge::listKeyMaterial($context));
+            ? $manager->decryptLocalWithAnyKey($context, $parsed['nonce'], $parsed['cipher'], $preferredKeyId)
+            : $this->decryptStream($parsed, CoreCryptoBridge::listKeyMaterial($context), $preferredKeyId);
 
         if ($plaintext === null) {
             fwrite(STDERR, "Failed to decrypt {$path} using context {$context}\n");
@@ -80,7 +81,7 @@ final class VaultDecryptCommand implements CommandInterface
     }
 
     /**
-     * @return array{mode:string,nonce:string,cipher:string}|array{mode:string,header:string,frames:string}
+     * @return array{mode:string,nonce:string,cipher:string,keyId?:string}|array{mode:string,header:string,frames:string,keyId?:string}
      */
     private function parsePayload(string $data): array
     {
@@ -91,9 +92,11 @@ final class VaultDecryptCommand implements CommandInterface
             throw new \RuntimeException('Unsupported payload version: ' . $version);
         }
 
+        $keyId = null;
         if ($version === 2) {
             $keyLen = ord($data[$ptr++]);
             if ($keyLen > 0) {
+                $keyId = substr($data, $ptr, $keyLen);
                 $ptr += $keyLen;
             }
         }
@@ -105,21 +108,33 @@ final class VaultDecryptCommand implements CommandInterface
         $tagLen = ord($data[$ptr++]);
         if ($tagLen === 0) {
             $frames = substr($data, $ptr);
-            return ['mode' => 'stream', 'header' => $nonce, 'frames' => $frames];
+            return ['mode' => 'stream', 'header' => $nonce, 'frames' => $frames] + ($keyId ? ['keyId' => $keyId] : []);
         }
 
         $tag = substr($data, $ptr, $tagLen);
         $ptr += $tagLen;
         $cipher = substr($data, $ptr);
-        return ['mode' => 'single', 'nonce' => $nonce, 'cipher' => $cipher . $tag];
+        $out = ['mode' => 'single', 'nonce' => $nonce, 'cipher' => $cipher . $tag];
+        if ($keyId) {
+            $out['keyId'] = $keyId;
+        }
+        return $out;
     }
 
     /**
      * @param array{header:string,frames:string} $parsed
      * @param list<array{id:string,bytes:string,slot:string}> $candidates
      */
-    private function decryptStream(array $parsed, array $candidates): ?string
+    private function decryptStream(array $parsed, array $candidates, ?string $preferredKeyId = null): ?string
     {
+        if ($preferredKeyId !== null) {
+            usort($candidates, static function ($a, $b) use ($preferredKeyId): int {
+                $aPref = (($a['id'] ?? '') === $preferredKeyId) ? 0 : 1;
+                $bPref = (($b['id'] ?? '') === $preferredKeyId) ? 0 : 1;
+                return $aPref <=> $bPref;
+            });
+        }
+
         foreach ($candidates as $candidate) {
             $bytes = $candidate['bytes'] ?? null;
             if (!$bytes) {

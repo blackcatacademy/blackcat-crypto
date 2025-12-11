@@ -174,7 +174,14 @@ final class CoreCryptoBridge
     private static function slot(string $name): string
     {
         $prefix = rtrim((string)(self::$options['context_prefix'] ?? self::DEFAULT_PREFIX), '.');
-        return $prefix . '.' . ltrim($name, '.');
+        $normalized = ltrim($name, '.');
+
+        // Avoid double-prefixing if caller already passed fully-qualified slot (e.g. "core.vault").
+        if (str_starts_with($normalized, $prefix . '.')) {
+            return $normalized;
+        }
+
+        return $prefix . '.' . $normalized;
     }
 
     /**

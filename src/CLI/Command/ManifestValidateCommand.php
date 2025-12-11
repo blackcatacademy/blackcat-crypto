@@ -64,8 +64,10 @@ final class ManifestValidateCommand implements CommandInterface
             return [false, ['Manifest is not valid JSON']];
         }
         $issues = [];
-        if (!isset($data['version']) || !is_int($data['version']) || $data['version'] < 1) {
-            $issues[] = 'version is required and must be a positive integer';
+        if (array_key_exists('version', $data)) {
+            if (!is_int($data['version']) || $data['version'] < 1) {
+                $issues[] = 'version must be a positive integer when provided';
+            }
         }
 
         $slots = $data['slots'] ?? null;

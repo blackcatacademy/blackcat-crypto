@@ -16,7 +16,7 @@ final class Envelope
     {
         $meta = [
             'createdAt' => time(),
-            'wrapCount' => ($kmsMetadata['wrapCount'] ?? 1),
+            'wrapCount' => ($kmsMetadata['wrapCount'] ?? 0),
         ];
         return new self($local, $kmsMetadata, $context, $meta);
     }

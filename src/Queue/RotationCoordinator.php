@@ -9,13 +9,19 @@ use Psr\Log\LoggerInterface;
 
 final class RotationCoordinator
 {
+    private readonly ?\Closure $persistCallback;
+
     public function __construct(
         private readonly CryptoManager $crypto,
         private readonly WrapQueueInterface $queue,
-        private readonly ?callable $persistCallback = null,
+        ?callable $persistCallback = null,
         private readonly ?LoggerInterface $logger = null,
         private readonly int $maxAttempts = 3,
-    ) {}
+    ) {
+        $this->persistCallback = $persistCallback
+            ? \Closure::fromCallable($persistCallback)
+            : null;
+    }
 
     public function schedule(Envelope $envelope): void
     {
@@ -34,9 +40,10 @@ final class RotationCoordinator
             $processed++;
             try {
                 $envelope = Envelope::decode($job->payload);
-                $plaintext = $this->crypto->decryptContext($job->context, $job->payload);
+                $plaintext = $this->crypto->decryptContext($job->context, $job->payload, ['skipRotation' => true]);
                 $newEnvelope = $this->crypto->encryptContext($job->context, $plaintext, [
-                    'wrapCount' => (int)(($envelope->meta['wrapCount'] ?? 0)),
+                    // use -1 so CryptoManager's +1 yields 0 (freshly rotated; won't immediately reschedule)
+                    'wrapCount' => -1,
                 ]);
                 if ($this->persistCallback) {
                     ($this->persistCallback)($job->context, $newEnvelope);

@@ -29,7 +29,7 @@ final class RotationPolicy
             }
         }
         if ($this->maxWraps !== null) {
-            $wrapCount = (int)($envelope->meta['wrapCount'] ?? 1);
+            $wrapCount = (int)($envelope->meta['wrapCount'] ?? 0);
             if ($wrapCount >= $this->maxWraps) {
                 return true;
             }

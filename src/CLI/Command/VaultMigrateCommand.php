@@ -46,9 +46,10 @@ final class VaultMigrateCommand implements CommandInterface
 
         $parsed = $this->parseLegacyPayload($payload);
         $manager = CoreCryptoBridge::boot();
+        $preferredKeyId = $parsed['keyId'] ?? null;
         $plaintext = $parsed['mode'] === 'single'
-            ? $manager->decryptLocalWithAnyKey($context, $parsed['nonce'], $parsed['cipher'])
-            : $this->decryptSecretStream($parsed, CoreCryptoBridge::listKeyMaterial($context));
+            ? $manager->decryptLocalWithAnyKey($context, $parsed['nonce'], $parsed['cipher'], $preferredKeyId)
+            : $this->decryptSecretStream($parsed, CoreCryptoBridge::listKeyMaterial($context), $preferredKeyId);
 
         if ($plaintext === null) {
             throw new RuntimeException('Unable to decrypt legacy payload with available keys');
@@ -128,8 +129,16 @@ final class VaultMigrateCommand implements CommandInterface
     /**
      * @param array<string,string> $candidates
      */
-    private function decryptSecretStream(array $parsed, array $candidates): string
+    private function decryptSecretStream(array $parsed, array $candidates, ?string $preferredKeyId = null): string
     {
+        if ($preferredKeyId !== null) {
+            usort($candidates, static function ($a, $b) use ($preferredKeyId): int {
+                $aPref = (($a['id'] ?? '') === $preferredKeyId) ? 0 : 1;
+                $bPref = (($b['id'] ?? '') === $preferredKeyId) ? 0 : 1;
+                return $aPref <=> $bPref;
+            });
+        }
+
         foreach ($candidates as $candidate) {
             $bytes = $candidate['bytes'] ?? null;
             if (!$bytes) {
