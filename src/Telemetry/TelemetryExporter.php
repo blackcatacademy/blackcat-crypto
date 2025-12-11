@@ -114,6 +114,20 @@ final class TelemetryExporter
                 }
             }
         }
+
+        $ci = $snapshot['intents']['ci'] ?? null;
+        if (is_array($ci) && !empty($ci)) {
+            $lines[] = '# HELP blackcat_ci_info CI context attached to crypto intents.';
+            $lines[] = '# TYPE blackcat_ci_info gauge';
+            $lines[] = sprintf(
+                'blackcat_ci_info{ref="%s",sha="%s",run_id="%s",job="%s",build_id="%s"} 1',
+                self::escapeLabel((string)($ci['ref'] ?? '')),
+                self::escapeLabel((string)($ci['sha'] ?? '')),
+                self::escapeLabel((string)($ci['run_id'] ?? '')),
+                self::escapeLabel((string)($ci['job'] ?? '')),
+                self::escapeLabel((string)($ci['build_id'] ?? ''))
+            );
+        }
         return implode("\n", $lines) . "\n";
     }
 
@@ -127,6 +141,7 @@ final class TelemetryExporter
     {
         $ts = (int)floor(microtime(true) * 1_000_000_000);
         $metrics = [];
+        $ci = $snapshot['intents']['ci'] ?? null;
 
         $metrics[] = self::gaugeMetric(
             'blackcat.kms.up_total',
@@ -220,13 +235,22 @@ final class TelemetryExporter
             ];
         }
 
+        $resourceAttrs = [
+            'service.name' => $serviceName,
+        ];
+        if (is_array($ci)) {
+            foreach (['ref', 'sha', 'run_id', 'job', 'build_id'] as $key) {
+                if (!empty($ci[$key])) {
+                    $resourceAttrs['ci.' . $key] = (string)$ci[$key];
+                }
+            }
+        }
+
         return [
             'resourceMetrics' => [
                 [
                     'resource' => [
-                        'attributes' => self::attributes([
-                            'service.name' => $serviceName,
-                        ]),
+                        'attributes' => self::attributes($resourceAttrs),
                     ],
                     'scopeMetrics' => [
                         [

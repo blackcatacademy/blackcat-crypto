@@ -27,18 +27,28 @@ final class IntentCollector
         'region' => [],
         'service' => [],
         'error_class' => [],
+        'ci_ref' => [],
+        'ci_sha' => [],
+        'ci_run' => [],
+        'ci_job' => [],
+        'build_id' => [],
     ];
 
     /** @var array<int,array<string,mixed>> */
     private array $recent = [];
     private static ?self $global = null;
+    private ?array $ciContext;
 
     public function __construct(
         private int $recentLimit = 50,
         private ?string $archivePath = null,
         private ?int $archiveMaxBytes = null,
-        private int $archiveKeep = 3
-    ) {}
+        private int $archiveKeep = 3,
+        private ?array $ciContext = null,
+        private ?int $archiveTtlSeconds = null
+    ) {
+        $this->ciContext = $ciContext ?? $this->detectCiContext();
+    }
 
     public static function global(?self $set = null): ?self
     {
@@ -68,11 +78,19 @@ final class IntentCollector
         $this->bumpTag('region', $payload['region'] ?? null);
         $this->bumpTag('service', $payload['service'] ?? $payload['component'] ?? null);
         $this->bumpTag('error_class', $payload['error'] ?? $payload['error_class'] ?? null);
+        if ($this->ciContext) {
+            $this->bumpTag('ci_ref', $this->ciContext['ref'] ?? null);
+            $this->bumpTag('ci_sha', $this->ciContext['sha'] ?? null);
+            $this->bumpTag('ci_run', $this->ciContext['run_id'] ?? null);
+            $this->bumpTag('ci_job', $this->ciContext['job'] ?? null);
+            $this->bumpTag('build_id', $this->ciContext['build_id'] ?? null);
+        }
 
         $entry = [
             'intent' => $intent,
             'payload' => $payload,
             'ts' => time(),
+            'ci' => $this->ciContext,
         ];
         $this->recent[] = $entry;
         if (count($this->recent) > $this->recentLimit) {
@@ -101,6 +119,7 @@ final class IntentCollector
             'counts' => $this->counters,
             'tag_counts' => $this->tagCounters,
             'recent' => $this->recent,
+            'ci' => $this->ciContext,
         ];
     }
 
@@ -131,5 +150,36 @@ final class IntentCollector
                 }
             }
         }
+        if ($this->archiveTtlSeconds !== null) {
+            $cutoff = time() - $this->archiveTtlSeconds;
+            for ($i = 1; $i <= $this->archiveKeep; $i++) {
+                $path = $this->archivePath . '.' . $i;
+                if (file_exists($path) && filemtime($path) < $cutoff) {
+                    @unlink($path);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array<string,string>|null
+     */
+    private function detectCiContext(): ?array
+    {
+        $ref = getenv('GITHUB_REF') ?: getenv('CI_COMMIT_REF_NAME') ?: null;
+        $sha = getenv('GITHUB_SHA') ?: getenv('CI_COMMIT_SHA') ?: null;
+        $runId = getenv('GITHUB_RUN_ID') ?: getenv('CI_PIPELINE_ID') ?: null;
+        $job = getenv('GITHUB_JOB') ?: getenv('CI_JOB_NAME') ?: null;
+        $buildId = getenv('BUILD_ID') ?: getenv('CI_BUILD_ID') ?: null;
+
+        $ctx = array_filter([
+            'ref' => $ref ?: null,
+            'sha' => $sha ?: null,
+            'run_id' => $runId ?: null,
+            'job' => $job ?: null,
+            'build_id' => $buildId ?: null,
+        ], static fn($v) => $v !== null && $v !== '');
+
+        return $ctx === [] ? null : $ctx;
     }
 }
