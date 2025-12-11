@@ -19,11 +19,13 @@ final class CoreCryptoBridgeTest extends TestCase
             mkdir($this->keysDir, 0770, true);
         }
         file_put_contents($this->keysDir . '/crypto_key_v1.key', random_bytes(32));
+        file_put_contents($this->keysDir . '/crypto_legacy_v1.key', random_bytes(32));
 
         $this->manifest = tempnam(sys_get_temp_dir(), 'core-manifest-') ?: ($this->keysDir . '/manifest.json');
         $data = [
             'slots' => [
                 'core.crypto.default' => ['type' => 'aead', 'key' => 'crypto_key', 'length' => 32],
+                'core.crypto.legacy' => ['type' => 'aead', 'key' => 'crypto_legacy', 'length' => 32],
             ],
         ];
         file_put_contents($this->manifest, json_encode($data));

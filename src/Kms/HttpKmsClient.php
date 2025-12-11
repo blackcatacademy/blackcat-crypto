@@ -38,9 +38,11 @@ final class HttpKmsClient implements KmsClientInterface
             'nonce' => $metadata['nonce'] ?? '',
             'keyId' => $metadata['keyId'] ?? '',
         ]);
+        $nonceRaw = (string)($resp['nonce'] ?? '');
+        $nonceDecoded = base64_decode($nonceRaw, true);
         return new Payload(
             ciphertext: base64_decode((string)$resp['payload'], true) ?: '',
-            nonce: (string)($resp['nonce'] ?? ''),
+            nonce: $nonceDecoded !== false ? $nonceDecoded : $nonceRaw,
             keyId: (string)($resp['keyId'] ?? ''),
         );
     }
