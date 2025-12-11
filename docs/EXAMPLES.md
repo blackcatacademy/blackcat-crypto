@@ -60,3 +60,35 @@ php bin/crypto wrap:status
 GITHUB_ACTIONS=true GITHUB_RUN_ID=12345 \
   php bin/crypto metrics:export otel
 ```
+
+## KMS client config (HTTP)
+```yaml
+kms:
+  - id: primary-http
+    type: http
+    base_uri: https://kms.example.com
+    bearer: "${KMS_BEARER_TOKEN}"
+    basic:
+      user: "${KMS_USER}"
+      pass: "${KMS_PASS}"
+    headers:
+      X-Tenant: acme
+    ssl:
+      ca: /etc/ssl/certs/ca.pem
+      cert: /etc/ssl/certs/client.pem
+      key: /etc/ssl/private/client.key
+      verify_peer: true
+    timeouts:
+      connect: 2
+      read: 5
+```
+
+## KMS client config (HSM)
+```yaml
+kms:
+  - id: pci-hsm
+    type: hsm
+    endpoint: tcp://10.0.0.5:9000
+    allow_ciphers: [aes-256-gcm, aes-192-gcm]
+    tag_length: 16   # validated: must be 8..32
+```
