@@ -60,8 +60,8 @@ Repo je nyní na Stage 9.
 - `CryptoManager` publikuje “query intents” – metadata proudí do observability (traces/logs) a governance služeb.
 - Self-service portal (napojený na `blackcat-governance`, `blackcat-support`) pro správu manifestů, approvals, regeneraci CLI/SDK artefaktů.
 - Vault policy enforcement: `vault:report --fail-on-unused` + API/feeds do compliance dashboards.
-- Implementováno: HSM shim (`HsmKmsClient`), CLI pro rotace klíčů (`key:rotate`), validátor manifestů (`manifest:validate`), KMS router umí preferovat HSM klienta a CLI `kms:list|suspend|resume` + `describe()` pokrytí, intent/metrics export do OpenTelemetry (`metrics:export --format otel`, `telemetry:intents --format otel`).
-- Další na řadě: governanční API pro auto-aproval low-risk unwraps, rollout hooků v `blackcat-database-crypto` (lint + telemetry v CI), richer intent telemetry (action/context tagging) a archivace intent feedu.
+- Implementováno: HSM shim (`HsmKmsClient`), CLI pro rotace klíčů (`key:rotate`), validátor manifestů (`manifest:validate`), KMS router umí preferovat HSM klienta a CLI `kms:list|suspend|resume` + `describe()` pokrytí, intent/metrics export do OpenTelemetry (`metrics:export --format otel`, `telemetry:intents --format otel`), richer intent tagging + archivace (action/tenant/algorithm/route/context), governanční API pro auto-approval low-risk unwraps, DB crypto hook (`DatabaseCryptoHooks`) publikující telemetry snapshoty pro CI/dashboardy.
+- Další na řadě: rollout hooků v `blackcat-database-crypto` (lint + telemetry v CI), dokončení telemetry exportu do DB tooling, tagging pro další kontexty (PII klastry, workload class), auditní archivace s rotací.
 
 ## Stage 12 – Autonomous Compliance Mesh (planned)
 - Automatizované enforcement runbooks: pokud manifest/DB driftuje, orchestrace spouští `vault:migrate` / wrap queue / ticketing.

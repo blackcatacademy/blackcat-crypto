@@ -12,11 +12,23 @@ final class IntentCollector
     /** @var array<string,int> */
     private array $counters = [];
 
+    /** @var array<string,array<string,int>> */
+    private array $tagCounters = [
+        'action' => [],
+        'tenant' => [],
+        'algorithm' => [],
+        'route' => [],
+        'context' => [],
+    ];
+
     /** @var array<int,array<string,mixed>> */
     private array $recent = [];
     private static ?self $global = null;
 
-    public function __construct(private int $recentLimit = 50) {}
+    public function __construct(
+        private int $recentLimit = 50,
+        private ?string $archivePath = null
+    ) {}
 
     public static function global(?self $set = null): ?self
     {
@@ -32,6 +44,13 @@ final class IntentCollector
     public function record(string $intent, array $payload): void
     {
         $this->counters[$intent] = ($this->counters[$intent] ?? 0) + 1;
+
+        $this->bumpTag('action', $payload['action'] ?? null);
+        $this->bumpTag('tenant', $payload['tenant'] ?? $payload['tenant_id'] ?? null);
+        $this->bumpTag('algorithm', $payload['algorithm'] ?? null);
+        $this->bumpTag('route', $payload['route'] ?? null);
+        $this->bumpTag('context', $payload['context'] ?? null);
+
         $entry = [
             'intent' => $intent,
             'payload' => $payload,
@@ -40,6 +59,11 @@ final class IntentCollector
         $this->recent[] = $entry;
         if (count($this->recent) > $this->recentLimit) {
             array_shift($this->recent);
+        }
+
+        if ($this->archivePath) {
+            $line = json_encode($entry) . PHP_EOL;
+            @file_put_contents($this->archivePath, $line, FILE_APPEND | LOCK_EX);
         }
     }
 
@@ -50,7 +74,18 @@ final class IntentCollector
     {
         return [
             'counts' => $this->counters,
+            'tag_counts' => $this->tagCounters,
             'recent' => $this->recent,
         ];
+    }
+
+    private function bumpTag(string $key, mixed $value): void
+    {
+        if ($value === null || $value === '') {
+            return;
+        }
+        $bucket = &$this->tagCounters[$key];
+        $value = (string) $value;
+        $bucket[$value] = ($bucket[$value] ?? 0) + 1;
     }
 }

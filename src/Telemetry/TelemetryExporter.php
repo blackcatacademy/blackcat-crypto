@@ -98,6 +98,22 @@ final class TelemetryExporter
                 );
             }
         }
+
+        $tagCounts = $snapshot['intents']['tag_counts'] ?? [];
+        if (!empty($tagCounts)) {
+            $lines[] = '# HELP blackcat_intents_by_tag_total Total crypto intents grouped by tag.';
+            $lines[] = '# TYPE blackcat_intents_by_tag_total counter';
+            foreach ($tagCounts as $tagKey => $pairs) {
+                foreach ($pairs as $tagValue => $count) {
+                    $lines[] = sprintf(
+                        'blackcat_intents_by_tag_total{tag_key="%s",tag_value="%s"} %d',
+                        self::escapeLabel((string)$tagKey),
+                        self::escapeLabel((string)$tagValue),
+                        (int)$count
+                    );
+                }
+            }
+        }
         return implode("\n", $lines) . "\n";
     }
 
@@ -176,6 +192,33 @@ final class TelemetryExporter
                 'dataPoints' => $intentPoints ?: [self::numberDataPoint(0, $ts)],
             ],
         ];
+
+        $tagCounts = $snapshot['intents']['tag_counts'] ?? [];
+        $tagPoints = [];
+        foreach ($tagCounts as $tagKey => $pairs) {
+            foreach ($pairs as $tagValue => $count) {
+                $tagPoints[] = self::numberDataPoint(
+                    (int)$count,
+                    $ts,
+                    [
+                        'tag_key' => (string)$tagKey,
+                        'tag_value' => (string)$tagValue,
+                    ]
+                );
+            }
+        }
+        if (!empty($tagPoints)) {
+            $metrics[] = [
+                'name' => 'blackcat.intents.by_tag',
+                'description' => 'Total crypto intents grouped by tag.',
+                'unit' => '1',
+                'sum' => [
+                    'aggregationTemporality' => 2,
+                    'isMonotonic' => true,
+                    'dataPoints' => $tagPoints,
+                ],
+            ];
+        }
 
         return [
             'resourceMetrics' => [
