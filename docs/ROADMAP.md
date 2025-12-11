@@ -65,6 +65,12 @@ Repo je nyní na Stage 9.
 - HSM/KMS vylepšení: konfigurovatelné šifry a autentizační metody na úrovni klienta; per-tenant allowlist rout; serializace `suspend` stavu (persistentní soubor/Redis) pro snadný restart; časové limity/backoff policy v CLI i routeru.
 - Governance: rozšířit low-risk API o per-tenant limity + rate-limity; připravit `gov:intents` feed (audit posledních rozhodnutí) a archivaci do S3/GCS; governance reporter/inbox feedovat do exporterů (OTLP/S3).
 - Intent telemetry: enrich “intent” export s CI metadaty, PII klastrem, workload class; přidat výstupy do OTLP log/trace a archivátor s TTL; deduplikace/tagging na governance_id/approval_status, archivace intentů podle TTL.
+- Database-crypto rollout (near-term):
+  - V CI `blackcat-database-crypto`: spouštět lint + telemetry snapshoty (OTLP/JSON) a nahrát jako artefakty.
+  - `DatabaseCryptoHooks` publikují intent telemetry do OpenTelemetry + lokální JSON fallback.
+  - Governance feed pro low-risk unwrap approvals se propíše i do DB hooků (rate-limit, tenant caps, audit log).
+  - FileVault/Core bridge používá nové KMS routování a enrich tagy (env/product/PII/workload tier/kms client/cipher suite).
+  - “Suspend” stav routeru/HSM serializovat do Redis/disku; CLI umí obnovit a hlásit poslední suspend/health.
 
 ## Stage 12 – Autonomous Compliance Mesh (planned)
 - Automatizované enforcement runbooks: pokud manifest/DB driftuje, orchestrace spouští `vault:migrate` / wrap queue / ticketing.
