@@ -19,6 +19,10 @@ final class CoreCryptoBridge
 {
     private const VERSION = 2;
     private const DEFAULT_PREFIX = 'core';
+    private const SLOT_DEFAULT_ENCRYPT = 'crypto.default';
+    private const SLOT_HMAC_CSRF = 'hmac.csrf';
+    private const SLOT_HMAC_SESSION = 'core.hmac.session';
+    private const SLOT_VAULT = 'core.vault';
 
     /** @var null|callable(string,array):void */
     private static $intentEmitter = null;
@@ -177,8 +181,30 @@ final class CoreCryptoBridge
         $prefix = rtrim((string)(self::$options['context_prefix'] ?? self::DEFAULT_PREFIX), '.');
         $normalized = ltrim($name, '.');
 
+        $aliases = [
+            'default' => self::SLOT_DEFAULT_ENCRYPT,
+            self::SLOT_DEFAULT_ENCRYPT => self::SLOT_DEFAULT_ENCRYPT,
+            'csrf' => self::SLOT_HMAC_CSRF,
+            'csrf_key' => self::SLOT_HMAC_CSRF,
+            self::SLOT_HMAC_CSRF => self::SLOT_HMAC_CSRF,
+            'session_token_key' => self::SLOT_HMAC_SESSION,
+            'session' => self::SLOT_HMAC_SESSION,
+            self::SLOT_HMAC_SESSION => self::SLOT_HMAC_SESSION,
+            'vault' => self::SLOT_VAULT,
+            self::SLOT_VAULT => self::SLOT_VAULT,
+        ];
+
+        if (isset($aliases[$normalized])) {
+            return $aliases[$normalized];
+        }
+
         // Avoid double-prefixing if caller already passed fully-qualified slot (e.g. "core.vault").
         if (str_starts_with($normalized, $prefix . '.')) {
+            return $normalized;
+        }
+
+        // Keep arbitrary namespaces intact (e.g. "crypto.app.feature").
+        if (str_contains($normalized, '.')) {
             return $normalized;
         }
 
