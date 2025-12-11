@@ -25,6 +25,7 @@ use BlackCat\Crypto\CLI\Command\KmsResumeCommand;
 use BlackCat\Crypto\CLI\Command\KmsListCommand;
 use BlackCat\Crypto\CLI\Command\TelemetryIntentsCommand;
 use BlackCat\Crypto\CLI\Command\GovernanceAssessCommand;
+use BlackCat\Crypto\CLI\Command\DbSnapshotCommand;
 use Psr\Log\NullLogger;
 
 final class Application
@@ -56,6 +57,7 @@ final class Application
         $this->register(new VaultCoverageCommand());
         $this->register(new TelemetryIntentsCommand());
         $this->register(new GovernanceAssessCommand());
+        $this->register(new DbSnapshotCommand());
     }
 
     public function register(CommandInterface $command): void

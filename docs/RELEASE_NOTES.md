@@ -7,6 +7,7 @@
 - Intent telemetry now tags env/product/pii_label/workload_tier/kms_client/cipher_suite/db_hook/governance_id/approval_status; archives rotate via `archiveMaxBytes`/`archiveKeep`.
 - Telemetry exporter emits richer intent tag counts (Prometheus/OpenTelemetry/JSON).
 - Database crypto hook bridge exposes telemetry snapshots for DB-facing tooling, now enriched with CI metadata when present (e.g., GitHub Actions env).
+- New `db:snapshot` CLI exports DB crypto hook telemetry in json/prom/otel for db-crypto CI.
 - Added governance intent logging + approval decisions (see `GovernanceApprovalService`) for low-risk unwrap/decrypt with audit tags.
 - Approval inbox feed (`BlackCat\Crypto\Governance\ApprovalInbox`) for queuing/approving/denying requests, emitting governance telemetry automatically.
 - HSM/KMS metadata now reports allowed ciphers, key version, and fingerprints; unwrap checks version by config.

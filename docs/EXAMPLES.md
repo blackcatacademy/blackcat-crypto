@@ -98,6 +98,13 @@ GITHUB_ACTIONS=true GITHUB_RUN_ID=12345 \
   php bin/crypto metrics:export otel
 ```
 
+## DB crypto snapshots (for db-crypto CI)
+```bash
+DB_CRYPTO_SNAPSHOT_PATH=./artifacts/db-crypto.json ./bin/crypto db:snapshot --format json
+./bin/crypto db:snapshot prom > ./artifacts/db-crypto.prom
+./bin/crypto db:snapshot --format otel --output ./artifacts/db-crypto-otel.json
+```
+
 ## KMS client config (HTTP)
 ```yaml
 kms:
