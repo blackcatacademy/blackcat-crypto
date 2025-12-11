@@ -12,7 +12,7 @@ final class TelemetryExporter
      * @param array<int,array<string,mixed>> $kmsHealth
      * @return array<string,mixed>
      */
-    public static function snapshot(array $kmsHealth, ?WrapQueueInterface $queue = null, ?IntentCollector $collector = null): array
+    public static function snapshot(array $kmsHealth, ?WrapQueueInterface $queue = null, ?IntentCollector $collector = null, ?array $ciMeta = null): array
     {
         $collector = $collector ?? IntentCollector::global();
         $timestamp = time();
@@ -20,27 +20,19 @@ final class TelemetryExporter
         $up = 0;
         $suspendedTotal = 0;
         foreach ($kmsHealth as $entry) {
-            $clientId = (string)($entry['client'] ?? 'unknown');
-            $statusData = $entry['status'] ?? [];
-            $status = is_array($statusData)
-                ? (string)($statusData['status'] ?? 'unknown')
-                : (string)$statusData;
-            if (strtolower($status) === 'ok') {
+            $client = self::enrichKmsClient($entry);
+            $clients[] = $client;
+
+            if (strtolower((string)$client['status']) === 'ok') {
                 $up++;
             }
-            $suspended = isset($entry['suspended']) && $entry['suspended'] === true;
-            if ($suspended) {
+            if (($client['suspended'] ?? false) === true) {
                 $suspendedTotal++;
             }
-            $clients[] = [
-                'id' => $clientId,
-                'status' => $status,
-                'details' => $statusData,
-                'suspended' => $suspended,
-            ];
         }
         $queueMetrics = self::queueMetrics($queue);
         $intents = $collector ? $collector->snapshot() : null;
+        $ci = $ciMeta ?? ($intents['ci'] ?? null);
         return [
             'timestamp' => $timestamp,
             'kms_up_total' => $up,
@@ -48,6 +40,7 @@ final class TelemetryExporter
             'kms_clients' => $clients,
             'wrap_queue' => $queueMetrics,
             'intents' => $intents,
+            'ci' => $ci,
         ];
     }
 
@@ -64,9 +57,10 @@ final class TelemetryExporter
             $status = strtolower((string)($client['status'] ?? 'unknown'));
             $value = $status === 'ok' ? 1 : 0;
             $lines[] = sprintf(
-                'blackcat_kms_health_info{client="%s",status="%s"} %d',
+                'blackcat_kms_health_info{client="%s",status="%s",suspended="%s"} %d',
                 self::escapeLabel((string)$clientId),
                 self::escapeLabel($status),
+                ($client['suspended'] ?? false) ? 'true' : 'false',
                 $value
             );
         }
@@ -115,7 +109,7 @@ final class TelemetryExporter
             }
         }
 
-        $ci = $snapshot['intents']['ci'] ?? null;
+        $ci = $snapshot['ci'] ?? ($snapshot['intents']['ci'] ?? null);
         if (is_array($ci) && !empty($ci)) {
             $lines[] = '# HELP blackcat_ci_info CI context attached to crypto intents.';
             $lines[] = '# TYPE blackcat_ci_info gauge';
@@ -141,7 +135,7 @@ final class TelemetryExporter
     {
         $ts = (int)floor(microtime(true) * 1_000_000_000);
         $metrics = [];
-        $ci = $snapshot['intents']['ci'] ?? null;
+        $ci = $snapshot['ci'] ?? ($snapshot['intents']['ci'] ?? null);
 
         $metrics[] = self::gaugeMetric(
             'blackcat.kms.up_total',
@@ -168,6 +162,7 @@ final class TelemetryExporter
                 [
                     'client' => (string)($client['id'] ?? 'unknown'),
                     'status' => $status,
+                    'suspended' => ($client['suspended'] ?? false) ? 'true' : 'false',
                 ]
             );
         }
@@ -235,10 +230,11 @@ final class TelemetryExporter
             ];
         }
 
-        $resourceAttrs = [
-            'service.name' => $serviceName,
-        ];
-        if (is_array($ci)) {
+        $resourceAttrs = ['service.name' => $serviceName];
+        if (!is_array($ci)) {
+            $ci = $snapshot['intents']['ci'] ?? null;
+        }
+        if (is_array($ci) && !empty($ci)) {
             foreach (['ref', 'sha', 'run_id', 'job', 'build_id'] as $key) {
                 if (!empty($ci[$key])) {
                     $resourceAttrs['ci.' . $key] = (string)$ci[$key];
@@ -306,6 +302,11 @@ final class TelemetryExporter
                 'region' => (string)($tags['region'] ?? ''),
                 'workload' => (string)($tags['workload'] ?? ''),
                 'source' => (string)($tags['source'] ?? ''),
+                'governance_id' => (string)($tags['governance_id'] ?? ($entry['governance_id'] ?? '')),
+                'approval_status' => (string)($tags['approval_status'] ?? ($entry['approval_status'] ?? '')),
+                'kms_client' => (string)($tags['kms_client'] ?? ($entry['kms_client'] ?? '')),
+                'cipher_suite' => (string)($tags['cipher_suite'] ?? ($entry['cipher_suite'] ?? '')),
+                'db_hook' => (string)($tags['db_hook'] ?? ($entry['db_hook'] ?? '')),
             ];
             if ($error !== '') {
                 $attrs['error'] = $error;
@@ -399,6 +400,48 @@ final class TelemetryExporter
     private static function escapeLabel(string $value): string
     {
         return str_replace(['\\', '"', "\n"], ['\\\\', '\"', ''], $value);
+    }
+
+    /**
+     * Normalize a KMS client entry into a consistent shape.
+     *
+     * @param array<string,mixed> $entry
+     * @return array<string,mixed>
+     */
+    private static function enrichKmsClient(array $entry): array
+    {
+        $clientId = (string)($entry['client'] ?? 'unknown');
+        $statusData = $entry['status'] ?? [];
+        $status = is_array($statusData)
+            ? (string)($statusData['status'] ?? 'unknown')
+            : (string)$statusData;
+        $config = is_array($entry['config'] ?? null) ? $entry['config'] : [];
+        $crypto = is_array($entry['crypto'] ?? null) ? $entry['crypto'] : [];
+
+        $suspended = (bool)($entry['suspended'] ?? ($statusData['suspended'] ?? false));
+        $details = array_filter([
+            'status' => $statusData['status'] ?? null,
+            'status_data' => $statusData['data'] ?? null,
+            'suspended' => $suspended,
+            'suspend_state' => $statusData['suspend_state'] ?? null,
+            'suspend_reason' => $statusData['suspend_reason'] ?? null,
+            'latency_ms' => $statusData['latency_ms'] ?? ($crypto['latency_ms'] ?? null),
+            'request_timeout_ms' => $config['request_timeout_ms'] ?? null,
+            'allowed_cipher_suites' => $config['allowed_cipher_suites'] ?? null,
+            'preferred_cipher_suite' => $config['preferred_cipher_suite'] ?? null,
+            'cipher_suite' => $crypto['cipher_suite'] ?? null,
+            'auth_mode' => $config['auth_mode'] ?? ($crypto['auth_mode'] ?? null),
+            'tag_length' => $crypto['tag_length'] ?? null,
+            'nonce_length' => $crypto['nonce_length'] ?? null,
+            'key_version' => $crypto['key_version'] ?? null,
+        ], static fn($v) => $v !== null);
+
+        return [
+            'id' => $clientId,
+            'status' => $status,
+            'details' => $details,
+            'suspended' => $suspended,
+        ];
     }
 
     /**

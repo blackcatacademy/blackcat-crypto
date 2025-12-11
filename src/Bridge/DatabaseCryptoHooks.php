@@ -5,6 +5,7 @@ namespace BlackCat\Crypto\Bridge;
 
 use BlackCat\Crypto\Telemetry\IntentCollector;
 use BlackCat\Crypto\Telemetry\TelemetryExporter;
+use BlackCat\Crypto\Queue\WrapQueueInterface;
 
 /**
  * Convenience bridge for database integration: emits telemetry snapshots that
@@ -15,9 +16,11 @@ final class DatabaseCryptoHooks
     public function __construct(private IntentCollector $collector) {}
 
     /**
+     * @param array<int,array<string,mixed>> $kmsHealth
+     * @param WrapQueueInterface|null $queue
      * @return array<string,mixed>
      */
-    public function telemetrySnapshot(): array
+    public function telemetrySnapshot(array $kmsHealth = [], ?WrapQueueInterface $queue = null, ?IntentCollector $collector = null): array
     {
         $ciMeta = [
             'ci' => getenv('CI') ?: null,
@@ -27,8 +30,17 @@ final class DatabaseCryptoHooks
             'job' => getenv('GITHUB_JOB') ?: null,
         ];
 
-        $snapshot = TelemetryExporter::snapshot(kmsHealth: [], queue: null, collector: $this->collector);
-        $snapshot['ci'] = array_filter($ciMeta, static fn($v) => $v !== null && $v !== '');
+        $snapshot = TelemetryExporter::snapshot(
+            kmsHealth: $kmsHealth,
+            queue: $queue,
+            collector: $collector ?? $this->collector,
+            ciMeta: array_filter($ciMeta, static fn($v) => $v !== null && $v !== '')
+        );
+
+        $snapshotPath = getenv('DB_CRYPTO_SNAPSHOT_PATH');
+        if (is_string($snapshotPath) && $snapshotPath !== '') {
+            @file_put_contents($snapshotPath, json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        }
         return $snapshot;
     }
 }
