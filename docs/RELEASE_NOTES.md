@@ -13,6 +13,7 @@
 ### KMS hardening
 - HTTP KMS client now supports bearer/basic auth, custom headers, mTLS (CA/cert/key), peer verification toggle, and independent connect/read timeouts.
 - AEAD tag length is validated for HSM KMS (fails fast if outside 8–32 byte window).
+- HSM shim persists `suspend` state (optional JSON file) and auto-resumes after expiry; health now reports request timeout and current suspend status.
 
 ### How to try
 - Enable intent collector: `BLACKCAT_CRYPTO_INTENTS=1 ./bin/crypto telemetry:intents --format=prom`.

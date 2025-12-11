@@ -42,13 +42,10 @@ final class HsmKmsClient implements KmsClientInterface
             throw new RuntimeException(sprintf('HSM %s disabled by policy.', $operation));
         }
 
-        $suspend = $this->readSuspendState();
+        $suspend = $this->isSuspended();
         if ($suspend['suspend'] ?? false) {
-            $until = $suspend['until_ms'] ?? null;
             $reason = $suspend['reason'] ?? 'suspended';
-            if ($until === null || (int)$until > (int)(microtime(true) * 1000)) {
-                throw new RuntimeException(sprintf('HSM %s blocked: %s', $operation, $reason));
-            }
+            throw new RuntimeException(sprintf('HSM %s blocked: %s', $operation, $reason));
         }
 
         $latencyMs = (int)($this->config['latency_ms'] ?? 0);
@@ -159,7 +156,25 @@ final class HsmKmsClient implements KmsClientInterface
             'fingerprint' => $fingerprint,
             'suspend' => $this->readSuspendState(),
             'latency_ms' => (int)($this->config['latency_ms'] ?? 0),
+            'request_timeout_ms' => (int)($this->config['request_timeout_ms'] ?? 0),
         ];
+    }
+
+    public function suspend(?string $reason = null, ?int $untilMs = null): void
+    {
+        $state = [
+            'suspend' => true,
+            'reason' => $reason ?? 'manual-suspend',
+        ];
+        if ($untilMs !== null) {
+            $state['until_ms'] = $untilMs;
+        }
+        $this->persistSuspendState($state);
+    }
+
+    public function resume(): void
+    {
+        $this->persistSuspendState(['suspend' => false, 'reason' => 'manual-resume']);
     }
 
     private function loadKey(): string
@@ -268,5 +283,47 @@ final class HsmKmsClient implements KmsClientInterface
             return ['suspend' => false, 'error' => 'invalid suspend file'];
         }
         return $json + ['suspend' => false];
+    }
+
+    private function isSuspended(): array
+    {
+        $state = $this->readSuspendState();
+        if (!($state['suspend'] ?? false)) {
+            return ['suspend' => false];
+        }
+
+        $until = $state['until_ms'] ?? null;
+        $now = (int)(microtime(true) * 1000);
+        if ($until !== null && (int)$until <= $now) {
+            // auto-resume once the window passed
+            $this->persistSuspendState(['suspend' => false, 'reason' => 'auto-resume', 'expired_at_ms' => $now]);
+            return ['suspend' => false, 'reason' => 'auto-resume'];
+        }
+
+        return $state;
+    }
+
+    private function persistSuspendState(array $state): void
+    {
+        $path = $this->suspendPath();
+        if ($path === null) {
+            return;
+        }
+        $dir = dirname($path);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new RuntimeException('Unable to create suspend directory: ' . $dir);
+        }
+        $payload = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($payload === false) {
+            throw new RuntimeException('Failed to encode suspend state.');
+        }
+        if (file_put_contents($path, $payload) === false) {
+            throw new RuntimeException('Failed to persist suspend state at ' . $path);
+        }
+    }
+
+    private function suspendPath(): ?string
+    {
+        return isset($this->config['suspend_path']) ? (string)$this->config['suspend_path'] : null;
     }
 }
