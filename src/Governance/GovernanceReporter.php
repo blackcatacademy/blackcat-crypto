@@ -27,10 +27,12 @@ final class GovernanceReporter
 
     private function record(string $decision, array $ctx): void
     {
-        $collector = $this->collector ?? IntentCollector::global();
+        $collector = IntentCollector::global();
         if ($collector === null) {
-            return;
+            $collector = $this->collector ?? new IntentCollector();
+            IntentCollector::global($collector);
         }
+        $this->collector = $collector;
 
         $collector->record('governance.unwrap', [
             'action' => 'unwrap',

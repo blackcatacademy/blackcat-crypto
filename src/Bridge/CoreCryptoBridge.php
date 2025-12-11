@@ -19,7 +19,7 @@ final class CoreCryptoBridge
 {
     private const VERSION = 2;
     private const DEFAULT_PREFIX = 'core';
-    private const SLOT_DEFAULT_ENCRYPT = 'crypto.default';
+    private const SLOT_DEFAULT_ENCRYPT = 'core.crypto.default';
     private const SLOT_HMAC_CSRF = 'hmac.csrf';
     private const SLOT_HMAC_SESSION = 'core.hmac.session';
     private const SLOT_VAULT = 'core.vault';
@@ -131,11 +131,13 @@ final class CoreCryptoBridge
      */
     public static function deriveKeyMaterial(string $slot, ?string $forceKeyId = null): array
     {
-        $material = self::manager()->keyMaterial(self::slot($slot), $forceKeyId);
+        $resolvedSlot = self::slot($slot);
+        $material = self::manager()->keyMaterial($resolvedSlot, $forceKeyId);
         return [
             'id' => $material->id,
             'bytes' => $material->bytes,
-            'slot' => $material->slot,
+            // Keep the caller-facing slot consistent with our alias resolution.
+            'slot' => $resolvedSlot,
         ];
     }
 
@@ -144,11 +146,12 @@ final class CoreCryptoBridge
      */
     public static function listKeyMaterial(string $slot): array
     {
-        $list = self::manager()->allKeyMaterial(self::slot($slot));
+        $resolvedSlot = self::slot($slot);
+        $list = self::manager()->allKeyMaterial($resolvedSlot);
         return array_map(static fn(KeyMaterial $mat) => [
             'id' => $mat->id,
             'bytes' => $mat->bytes,
-            'slot' => $mat->slot,
+            'slot' => $resolvedSlot,
         ], $list);
     }
 
@@ -203,9 +206,9 @@ final class CoreCryptoBridge
             return $normalized;
         }
 
-        // Keep arbitrary namespaces intact (e.g. "crypto.app.feature").
+        // For any dotted namespace not starting with the prefix, add it (e.g. "crypto.default" -> "core.crypto.default").
         if (str_contains($normalized, '.')) {
-            return $normalized;
+            return $prefix . '.' . $normalized;
         }
 
         return $prefix . '.' . $normalized;

@@ -74,15 +74,42 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         if (!$dir || !is_dir($dir)) {
             return [];
         }
-        $files = glob($dir . '/' . strtolower($slot->keyName()) . '*.key') ?: [];
-        sort($files);
+        $keyName = strtolower($slot->keyName());
+        $variants = array_values(array_unique([
+            $keyName,
+            str_replace(['.', '-'], '_', $keyName),
+            str_replace(['.', '-', '_'], '', $keyName),
+        ]));
+
+        $allFiles = glob($dir . '/*.key') ?: [];
+        sort($allFiles, SORT_STRING);
+
+        $matched = [];
+        foreach ($allFiles as $file) {
+            $base = strtolower(basename($file));
+            foreach ($variants as $variant) {
+                if ($variant !== '' && str_contains($base, $variant)) {
+                    $matched[] = $file;
+                    continue 2;
+                }
+            }
+        }
+
+        // Fallback: if nothing matched, take everything (deterministic order).
+        $targets = $matched === [] ? $allFiles : $matched;
+
         $result = [];
-        foreach ($files as $file) {
-            $bytes = file_get_contents($file);
+        foreach ($targets as $file) {
+            $bytes = @file_get_contents($file);
             if ($bytes === false) {
                 continue;
             }
-            $result[] = new KeyMaterial(basename($file), $bytes, $slot->name(), ['source' => 'filesystem']);
+            $result[] = new KeyMaterial(
+                id: basename($file),
+                bytes: $bytes,
+                slot: $slot->name(),
+                metadata: ['source' => 'filesystem', 'path' => $file],
+            );
         }
         return $result;
     }

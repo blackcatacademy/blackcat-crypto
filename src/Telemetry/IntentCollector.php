@@ -36,8 +36,11 @@ final class IntentCollector
 
     /** @var array<int,array<string,mixed>> */
     private array $recent = [];
+    /** @var array<string,array<string,bool>> */
+    private array $dedupTagSeen = [
+        'tenant' => [],
+    ];
     private static ?self $global = null;
-    private ?array $ciContext;
 
     public function __construct(
         private int $recentLimit = 50,
@@ -130,7 +133,13 @@ final class IntentCollector
         }
         $bucket = &$this->tagCounters[$key];
         $value = (string) $value;
+        if (isset($this->dedupTagSeen[$key][$value])) {
+            return;
+        }
         $bucket[$value] = ($bucket[$value] ?? 0) + 1;
+        if (array_key_exists($key, $this->dedupTagSeen)) {
+            $this->dedupTagSeen[$key][$value] = true;
+        }
     }
 
     private function rotateArchiveIfNeeded(): void
