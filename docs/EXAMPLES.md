@@ -51,6 +51,37 @@ Environment toggles:
 - `GOV_RATE_BURST` (default `50`) / `GOV_RATE_WINDOW` seconds (default `60`)
 - `GOV_TENANT_LIMITS_JSON` e.g. `{"acme":{"max_amount":2000,"max_sensitivity":"medium"}}`
 
+## Approval inbox (governance feed)
+```php
+use BlackCat\Crypto\Governance\ApprovalInbox;
+use BlackCat\Crypto\Governance\GovernanceReporter;
+use BlackCat\Crypto\Telemetry\IntentCollector;
+
+$collector = new IntentCollector();
+IntentCollector::global($collector);
+
+$inbox = new ApprovalInbox(
+    new GovernanceReporter(),
+    $collector
+);
+
+$id = $inbox->enqueue([
+    'request_id'    => 'req-123',
+    'tenant'        => 'acme',
+    'sensitivity'   => 'low',
+    'risk'          => 'unwrap',
+    'reason'        => 'analytics export',
+    'kms_client'    => 'primary-http',
+    'cipher_suite'  => 'xchacha20',
+    'db_hook'       => 'system-jobs',
+    'pii_label'     => 'none',
+]);
+
+// approve/deny later (also emits telemetry)
+$inbox->approve($id, ['approver' => 'alice@example.com']);
+// $inbox->deny($id, ['approver' => 'bob@example.com', 'reason' => 'over limit']);
+```
+
 ## Wrap queue
 ```bash
 # enqueue wrap jobs from manifest

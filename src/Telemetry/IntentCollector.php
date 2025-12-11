@@ -32,6 +32,15 @@ final class IntentCollector
         'ci_run' => [],
         'ci_job' => [],
         'build_id' => [],
+        'env' => [],
+        'product' => [],
+        'pii_label' => [],
+        'workload_tier' => [],
+        'kms_client' => [],
+        'cipher_suite' => [],
+        'db_hook' => [],
+        'governance_id' => [],
+        'approval_status' => [],
     ];
 
     /** @var array<int,array<string,mixed>> */
@@ -81,6 +90,15 @@ final class IntentCollector
         $this->bumpTag('region', $payload['region'] ?? null);
         $this->bumpTag('service', $payload['service'] ?? $payload['component'] ?? null);
         $this->bumpTag('error_class', $payload['error'] ?? $payload['error_class'] ?? null);
+        $this->bumpTag('env', $payload['env'] ?? $payload['environment'] ?? null);
+        $this->bumpTag('product', $payload['product'] ?? null);
+        $this->bumpTag('pii_label', $payload['pii_label'] ?? null);
+        $this->bumpTag('workload_tier', $payload['workload_tier'] ?? null);
+        $this->bumpTag('kms_client', $payload['kms_client'] ?? null);
+        $this->bumpTag('cipher_suite', $payload['cipher_suite'] ?? null);
+        $this->bumpTag('db_hook', $payload['db_hook'] ?? null);
+        $this->bumpTag('governance_id', $payload['governance_id'] ?? null);
+        $this->bumpTag('approval_status', $payload['approval_status'] ?? null);
         if ($this->ciContext) {
             $this->bumpTag('ci_ref', $this->ciContext['ref'] ?? null);
             $this->bumpTag('ci_sha', $this->ciContext['sha'] ?? null);

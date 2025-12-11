@@ -25,6 +25,11 @@ final class GovernanceReporter
         $this->record('denied', $ctx);
     }
 
+    public function queued(array $ctx): void
+    {
+        $this->record('queued', $ctx);
+    }
+
     private function record(string $decision, array $ctx): void
     {
         $collector = IntentCollector::global();
@@ -48,7 +53,11 @@ final class GovernanceReporter
             'request_id' => $ctx['request_id'] ?? null,
             'risk' => $ctx['risk'] ?? null,
             'reason' => $ctx['reason'] ?? null,
-            'result' => $decision === 'approved' ? 'ok' : 'rejected',
+            'result' => $decision === 'approved' ? 'ok' : ($decision === 'denied' ? 'rejected' : 'queued'),
+            'approval_status' => $decision,
+            'env' => $ctx['env'] ?? null,
+            'product' => $ctx['product'] ?? null,
+            'governance_id' => $ctx['governance_id'] ?? null,
         ]);
     }
 }
