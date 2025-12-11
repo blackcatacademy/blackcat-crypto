@@ -96,6 +96,7 @@ php bin/crypto telemetry:intents --format=prom --limit=25
 php bin/crypto kms:watchdog --interval=30
 php bin/crypto kms:suspend hsm-primary 600
 php bin/crypto kms:resume hsm-primary
+php bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500
 php bin/crypto vault:coverage var/ingress.ndjson --table --top=5
 php bin/crypto manifest:validate contexts/core.json --json
 php bin/crypto key:rotate app.hsm keys/
@@ -128,6 +129,8 @@ php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest
 
 `CryptoConfig::fromEnv()` tím automaticky načte všechny sloty/rotace, které pak používají `CryptoManager`, `CoreCryptoBridge` i SDK balíčky (`blackcat-crypto-js`, `blackcat-crypto-rust`). Stačí přidat nový kontext do manifestu a všechny repozitáře jej získají při dalším bootu, žádná duplicita konfigurace.
 
+Aktuální novinky a seznam změn viz `docs/RELEASE_NOTES.md`.
+
 #### Vault CLI toolkit
 
 - `php bin/crypto vault:diag storage/secure/` – projde všechny `.enc` soubory, zkontroluje headers/metadata (verze, `key_id`, kontext) a vypíše případná varování. Umí `--json`, `--manifest`, `--fail-on-warn`.
@@ -143,6 +146,7 @@ php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest
 - `php bin/crypto telemetry:sse` nabídne Server-Sent Events feed, které lze přeposílat do `blackcat-observability` nebo interních dashboardů.
 - `php bin/crypto kms:watchdog` pravidelně kontroluje zdraví KMS a automaticky vypíná nestabilní klienty (obnoví je jakmile health hlásí OK).
 - `php bin/crypto kms:list [--json]` vypíše registrované KMS klienty, váhy, kontexty a případné suspendace.
+- `php bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500` vyhodnotí, zda lze rozbalení/unwrap schválit automaticky (governance guardrail).
 
 ### Rewrap orchestrace z externích systémů
 
