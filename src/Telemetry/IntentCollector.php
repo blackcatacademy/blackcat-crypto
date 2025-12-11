@@ -19,6 +19,8 @@ final class IntentCollector
         'algorithm' => [],
         'route' => [],
         'context' => [],
+        'pii_cluster' => [],
+        'workload' => [],
     ];
 
     /** @var array<int,array<string,mixed>> */
@@ -27,7 +29,9 @@ final class IntentCollector
 
     public function __construct(
         private int $recentLimit = 50,
-        private ?string $archivePath = null
+        private ?string $archivePath = null,
+        private ?int $archiveMaxBytes = null,
+        private int $archiveKeep = 3
     ) {}
 
     public static function global(?self $set = null): ?self
@@ -50,6 +54,8 @@ final class IntentCollector
         $this->bumpTag('algorithm', $payload['algorithm'] ?? null);
         $this->bumpTag('route', $payload['route'] ?? null);
         $this->bumpTag('context', $payload['context'] ?? null);
+        $this->bumpTag('pii_cluster', $payload['pii_cluster'] ?? null);
+        $this->bumpTag('workload', $payload['workload'] ?? null);
 
         $entry = [
             'intent' => $intent,
@@ -62,6 +68,9 @@ final class IntentCollector
         }
 
         if ($this->archivePath) {
+            if ($this->archiveMaxBytes !== null) {
+                $this->rotateArchiveIfNeeded();
+            }
             $line = json_encode($entry) . PHP_EOL;
             @file_put_contents($this->archivePath, $line, FILE_APPEND | LOCK_EX);
         }
@@ -87,5 +96,24 @@ final class IntentCollector
         $bucket = &$this->tagCounters[$key];
         $value = (string) $value;
         $bucket[$value] = ($bucket[$value] ?? 0) + 1;
+    }
+
+    private function rotateArchiveIfNeeded(): void
+    {
+        if ($this->archivePath === null || $this->archiveMaxBytes === null) {
+            return;
+        }
+        clearstatcache(false, $this->archivePath);
+        $size = @filesize($this->archivePath);
+        if ($size !== false && $size >= $this->archiveMaxBytes) {
+            // Rotate archive.log -> archive.log.1 -> archive.log.2 ...
+            for ($i = $this->archiveKeep; $i >= 1; $i--) {
+                $src = $this->archivePath . ($i === 1 ? '' : '.' . ($i - 1));
+                $dst = $this->archivePath . '.' . $i;
+                if (file_exists($src)) {
+                    @rename($src, $dst);
+                }
+            }
+        }
     }
 }
