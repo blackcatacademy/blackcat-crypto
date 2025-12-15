@@ -9,6 +9,10 @@ use Psr\Log\LoggerInterface;
 
 final class MultiSourceKeyResolver implements KeyResolverInterface
 {
+    private const FILE_EXT_KEY = 'key';
+    private const FILE_EXT_HEX = 'hex';
+    private const FILE_EXT_B64 = 'b64';
+
     public function __construct(
         private readonly array $sources,
         private readonly ?LoggerInterface $logger = null,
@@ -18,10 +22,15 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
     {
         $candidates = $this->loadAllKeys($slot);
         if ($forceKeyId !== null) {
+            $found = null;
             foreach ($candidates as $candidate) {
                 if ($candidate->id === $forceKeyId) {
-                    return $candidate;
+                    // Keep the last match so source preference (filesystem > env) can win.
+                    $found = $candidate;
                 }
+            }
+            if ($found instanceof KeyMaterial) {
+                return $found;
             }
         }
         return end($candidates) ?: throw new \RuntimeException("No key material for slot {$slot->name()}");
@@ -64,6 +73,44 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         if ($keys === []) {
             throw new \RuntimeException('No key sources yielded data');
         }
+
+        // Ensure deterministic ordering (newest key must be last).
+        usort($keys, static function (KeyMaterial $a, KeyMaterial $b): int {
+            $av = self::keyVersion($a);
+            $bv = self::keyVersion($b);
+            if ($av !== $bv) {
+                return $av <=> $bv;
+            }
+
+            $as = self::sourceWeight($a);
+            $bs = self::sourceWeight($b);
+            if ($as !== $bs) {
+                return $as <=> $bs;
+            }
+
+            return strcmp($a->id, $b->id);
+        });
+
+        // Drop duplicates by key id (keep the preferred one after sorting).
+        $byId = [];
+        foreach ($keys as $mat) {
+            $byId[$mat->id] = $mat;
+        }
+        $keys = array_values($byId);
+        usort($keys, static function (KeyMaterial $a, KeyMaterial $b): int {
+            $av = self::keyVersion($a);
+            $bv = self::keyVersion($b);
+            if ($av !== $bv) {
+                return $av <=> $bv;
+            }
+            $as = self::sourceWeight($a);
+            $bs = self::sourceWeight($b);
+            if ($as !== $bs) {
+                return $as <=> $bs;
+            }
+            return strcmp($a->id, $b->id);
+        });
+
         return $keys;
     }
 
@@ -74,6 +121,7 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         if (!$dir || !is_dir($dir)) {
             return [];
         }
+        $expectedLen = $slot->length();
         $keyName = strtolower($slot->keyName());
         $variants = array_values(array_unique([
             $keyName,
@@ -81,7 +129,11 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
             str_replace(['.', '-', '_'], '', $keyName),
         ]));
 
-        $allFiles = glob($dir . '/*.key') ?: [];
+        $allFiles = array_merge(
+            glob($dir . '/*.' . self::FILE_EXT_KEY) ?: [],
+            glob($dir . '/*.' . self::FILE_EXT_HEX) ?: [],
+            glob($dir . '/*.' . self::FILE_EXT_B64) ?: [],
+        );
 
         $versioned = [];
         foreach ($allFiles as $file) {
@@ -90,10 +142,11 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
                 if ($variant === '') {
                     continue;
                 }
-                $pattern = '~^' . preg_quote($variant, '~') . '_v(?P<ver>\\d+)\\.key$~i';
+                $pattern = '~^' . preg_quote($variant, '~') . '_v(?P<ver>\\d+)\\.(?P<ext>key|hex|b64)$~i';
                 if (preg_match($pattern, $base, $m)) {
                     $versioned[] = [
                         'version' => (int)$m['ver'],
+                        'ext' => strtolower((string)$m['ext']),
                         'file' => $file,
                     ];
                     continue 2;
@@ -103,9 +156,10 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
 
         if ($versioned === [] && count($allFiles) === 1) {
             $only = (string)$allFiles[0];
-            if (preg_match('~_v(?P<ver>\\d+)\\.key$~i', basename($only), $m)) {
+            if (preg_match('~_v(?P<ver>\\d+)\\.(?P<ext>key|hex|b64)$~i', basename($only), $m)) {
                 $versioned[] = [
                     'version' => (int)$m['ver'],
+                    'ext' => strtolower((string)$m['ext']),
                     'file' => $only,
                 ];
             }
@@ -113,22 +167,40 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
 
         usort(
             $versioned,
-            static fn(array $a, array $b) => ($a['version'] <=> $b['version'])
-                ?: strcmp((string)$a['file'], (string)$b['file'])
+            static function (array $a, array $b): int {
+                $byVer = ($a['version'] <=> $b['version']);
+                if ($byVer !== 0) {
+                    return $byVer;
+                }
+                $wa = self::extWeight((string)($a['ext'] ?? ''));
+                $wb = self::extWeight((string)($b['ext'] ?? ''));
+                if ($wa !== $wb) {
+                    return $wa <=> $wb;
+                }
+                return strcmp((string)$a['file'], (string)$b['file']);
+            }
         );
 
         $result = [];
+        $seenVersions = [];
         foreach ($versioned as $entry) {
+            $ver = (int)($entry['version'] ?? 0);
+            if ($ver < 1 || isset($seenVersions[$ver])) {
+                continue;
+            }
+            $seenVersions[$ver] = true;
+
             $file = (string)$entry['file'];
-            $bytes = @file_get_contents($file);
-            if ($bytes === false) {
+            $ext = strtolower((string)($entry['ext'] ?? 'key'));
+            $bytes = $this->loadKeyBytesFromFile($file, $ext, $expectedLen);
+            if (!is_string($bytes)) {
                 continue;
             }
             $result[] = new KeyMaterial(
-                id: basename($file),
+                id: self::canonicalKeyId($slot, $ver),
                 bytes: $bytes,
                 slot: $slot->name(),
-                metadata: ['source' => 'filesystem', 'path' => $file],
+                metadata: ['source' => 'filesystem', 'path' => $file, 'version' => $ver, 'ext' => $ext],
             );
         }
         return $result;
@@ -139,12 +211,194 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
     {
         $prefix = $source['prefix'] ?? 'BC_KEY_';
         $keys = [];
-        foreach ($_ENV + $_SERVER as $name => $value) {
-            if (!str_starts_with($name, $prefix . strtoupper($slot->keyName()))) {
+        $expectedLen = $slot->length();
+
+        $keyName = strtoupper($slot->keyName());
+        $variants = array_values(array_unique([
+            $keyName,
+            str_replace(['.', '-'], '_', $keyName),
+            str_replace(['.', '-', '_'], '', $keyName),
+        ]));
+
+        $entries = [];
+        $env = array_merge((array)getenv(), $_ENV, $_SERVER);
+        foreach ($env as $name => $value) {
+            $name = (string)$name;
+            foreach ($variants as $variant) {
+                if ($variant === '') {
+                    continue;
+                }
+
+                $pattern = '~^' . preg_quote($prefix . $variant, '~') . '_V(?P<ver>\\d+)(?:_(?P<enc>HEX|B64|BASE64|RAW))?$~i';
+                if (!preg_match($pattern, $name, $m)) {
+                    continue;
+                }
+
+                $ver = (int)$m['ver'];
+                $bytes = $this->decodeKeyValue((string)$value, $expectedLen, $m['enc'] ?? null);
+                if (!is_string($bytes)) {
+                    $this->logger?->debug('envLoader: invalid key material', [
+                        'slot' => $slot->name(),
+                        'env' => $name,
+                        'version' => $ver,
+                    ]);
+                    continue;
+                }
+
+                $entries[] = [
+                    'version' => $ver,
+                    'env' => $name,
+                    'bytes' => $bytes,
+                ];
+                continue 2;
+            }
+        }
+
+        usort($entries, static fn(array $a, array $b): int => ($a['version'] <=> $b['version']) ?: strcmp((string)$a['env'], (string)$b['env']));
+
+        $seenVersions = [];
+        foreach ($entries as $e) {
+            $ver = (int)($e['version'] ?? 0);
+            if ($ver < 1 || isset($seenVersions[$ver])) {
                 continue;
             }
-            $keys[] = new KeyMaterial($name, (string)$value, $slot->name(), ['source' => 'env']);
+            $seenVersions[$ver] = true;
+            $keys[] = new KeyMaterial(
+                id: self::canonicalKeyId($slot, $ver),
+                bytes: (string)$e['bytes'],
+                slot: $slot->name(),
+                metadata: ['source' => 'env', 'env' => (string)$e['env'], 'version' => $ver],
+            );
         }
+
         return $keys;
+    }
+
+    private static function canonicalKeyId(KeySlot $slot, int $version): string
+    {
+        $name = strtolower($slot->keyName());
+        $name = preg_replace('~[^a-z0-9_.-]+~', '_', $name) ?: 'key';
+        return $name . '_v' . $version . '.key';
+    }
+
+    private static function keyVersion(KeyMaterial $mat): int
+    {
+        $meta = $mat->metadata['version'] ?? null;
+        if (is_int($meta) && $meta > 0) {
+            return $meta;
+        }
+        if (preg_match('~_v(?P<ver>\\d+)\\b~i', $mat->id, $m)) {
+            return (int)$m['ver'];
+        }
+        return 0;
+    }
+
+    private static function extWeight(string $ext): int
+    {
+        return match (strtolower($ext)) {
+            self::FILE_EXT_KEY => 0,
+            self::FILE_EXT_HEX => 1,
+            self::FILE_EXT_B64 => 2,
+            default => 99,
+        };
+    }
+
+    private static function sourceWeight(KeyMaterial $mat): int
+    {
+        $source = $mat->metadata['source'] ?? null;
+        $source = is_string($source) ? strtolower($source) : '';
+        return match ($source) {
+            'env' => 0,
+            'filesystem' => 1,
+            default => 50,
+        };
+    }
+
+    private function loadKeyBytesFromFile(string $file, string $ext, int $expectedLen): ?string
+    {
+        $raw = @file_get_contents($file);
+        if ($raw === false) {
+            return null;
+        }
+
+        if ($ext === self::FILE_EXT_KEY) {
+            if (strlen($raw) !== $expectedLen) {
+                $this->logger?->debug('filesystemLoader: invalid key length', [
+                    'file' => $file,
+                    'expected' => $expectedLen,
+                    'got' => strlen($raw),
+                ]);
+                return null;
+            }
+            return $raw;
+        }
+
+        if ($ext === self::FILE_EXT_HEX) {
+            $txt = preg_replace('~\\s+~', '', trim($raw)) ?? '';
+            if ($txt === '' || (strlen($txt) % 2) !== 0 || !ctype_xdigit($txt)) {
+                return null;
+            }
+            $bytes = @hex2bin($txt);
+            if ($bytes === false || strlen($bytes) !== $expectedLen) {
+                return null;
+            }
+            return $bytes;
+        }
+
+        if ($ext === self::FILE_EXT_B64) {
+            $txt = preg_replace('~\\s+~', '', trim($raw)) ?? '';
+            if ($txt === '') {
+                return null;
+            }
+            $bytes = base64_decode($txt, true);
+            if ($bytes === false || strlen($bytes) !== $expectedLen) {
+                return null;
+            }
+            return $bytes;
+        }
+
+        return null;
+    }
+
+    private function decodeKeyValue(string $value, int $expectedLen, ?string $encHint): ?string
+    {
+        $v = trim($value);
+        if ($v === '') {
+            return null;
+        }
+
+        $hint = strtoupper((string)$encHint);
+        if ($hint === 'HEX') {
+            $txt = preg_replace('~\\s+~', '', $v) ?? '';
+            if ($txt === '' || (strlen($txt) % 2) !== 0 || !ctype_xdigit($txt)) {
+                return null;
+            }
+            $bytes = @hex2bin($txt);
+            return ($bytes !== false && strlen($bytes) === $expectedLen) ? $bytes : null;
+        }
+        if ($hint === 'B64' || $hint === 'BASE64') {
+            $txt = preg_replace('~\\s+~', '', $v) ?? '';
+            $bytes = base64_decode($txt, true);
+            return ($bytes !== false && strlen($bytes) === $expectedLen) ? $bytes : null;
+        }
+        if ($hint === 'RAW') {
+            return (strlen($v) === $expectedLen) ? $v : null;
+        }
+
+        // Auto-detect (prefer exact-length hex, then base64).
+        $collapsed = preg_replace('~\\s+~', '', $v) ?? '';
+        if ($collapsed !== '' && ctype_xdigit($collapsed) && strlen($collapsed) === $expectedLen * 2) {
+            $bytes = @hex2bin($collapsed);
+            if ($bytes !== false && strlen($bytes) === $expectedLen) {
+                return $bytes;
+            }
+        }
+
+        $b64 = base64_decode($collapsed, true);
+        if ($b64 !== false && strlen($b64) === $expectedLen) {
+            return $b64;
+        }
+
+        return (strlen($v) === $expectedLen) ? $v : null;
     }
 }

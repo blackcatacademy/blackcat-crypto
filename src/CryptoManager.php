@@ -266,6 +266,20 @@ final class CryptoManager
         return $this->hmacWithKeyId($slot, $message)['signature'];
     }
 
+    /**
+     * @return list<array{signature:string, keyId:string}>
+     */
+    public function hmacCandidates(string $slot, string $message, ?int $maxCandidates = 20): array
+    {
+        $out = $this->hmac->candidates($slot, $message, $maxCandidates);
+        $this->recordIntent('hmac_candidates', [
+            'slot' => $slot,
+            'messageBytes' => strlen($message),
+            'candidates' => count($out),
+        ]);
+        return $out;
+    }
+
     public function verifyHmac(string $slot, string $message, string $signature): bool
     {
         $ok = $this->hmac->verify($slot, $message, $signature);
@@ -273,6 +287,19 @@ final class CryptoManager
             'slot' => $slot,
             'messageBytes' => strlen($message),
             'signatureBytes' => strlen($signature),
+            'success' => $ok,
+        ]);
+        return $ok;
+    }
+
+    public function verifyHmacWithKeyId(string $slot, string $message, string $signature, ?string $keyId): bool
+    {
+        $ok = $this->hmac->verifyWithKeyId($slot, $message, $signature, $keyId);
+        $this->recordIntent('verify_hmac', [
+            'slot' => $slot,
+            'messageBytes' => strlen($message),
+            'signatureBytes' => strlen($signature),
+            'keyId' => $keyId,
             'success' => $ok,
         ]);
         return $ok;

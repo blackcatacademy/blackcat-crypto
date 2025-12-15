@@ -29,10 +29,68 @@ final class HmacService
         ];
     }
 
+    /**
+     * Compute signature candidates for all available keys (newest -> oldest).
+     *
+     * Useful for DB lookups where *_key_version is unknown (query via IN (...) over candidates).
+     *
+     * @return list<array{signature:string, keyId:string}>
+     */
+    public function candidates(string $slot, string $message, ?int $maxCandidates = 20): array
+    {
+        $materials = $this->registry->all($slot);
+        if (!$materials) {
+            return [];
+        }
+
+        $out = [];
+        $count = 0;
+        for ($i = count($materials) - 1; $i >= 0; $i--) {
+            if ($maxCandidates !== null && $count >= $maxCandidates) {
+                break;
+            }
+            $mat = $materials[$i];
+            $out[] = [
+                'signature' => hash_hmac('sha256', $message, $mat->bytes, true),
+                'keyId' => $mat->id,
+            ];
+            $count++;
+        }
+        return $out;
+    }
+
     public function verify(string $slot, string $message, string $signature): bool
     {
-        $key = $this->registry->deriveAeadKey($slot);
-        $calc = hash_hmac('sha256', $message, $key->bytes, true);
-        return hash_equals($calc, $signature);
+        return $this->verifyWithKeyId($slot, $message, $signature, null);
+    }
+
+    /**
+     * Verify a signature against either:
+     * - a specific key id (fast-path; use *_key_version), or
+     * - all available keys (rotation-safe).
+     */
+    public function verifyWithKeyId(string $slot, string $message, string $signature, ?string $keyId): bool
+    {
+        if ($keyId !== null && $keyId !== '') {
+            try {
+                $key = $this->registry->deriveAeadKey($slot, $keyId);
+                $calc = hash_hmac('sha256', $message, $key->bytes, true);
+                return hash_equals($calc, $signature);
+            } catch (\Throwable $e) {
+                $this->logger?->debug('hmac verifyWithKeyId failed', [
+                    'slot' => $slot,
+                    'keyId' => $keyId,
+                    'error' => $e->getMessage(),
+                ]);
+                return false;
+            }
+        }
+
+        foreach ($this->candidates($slot, $message) as $cand) {
+            if (hash_equals($cand['signature'], $signature)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

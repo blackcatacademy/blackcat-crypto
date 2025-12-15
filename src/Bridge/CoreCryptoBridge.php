@@ -166,9 +166,13 @@ final class CoreCryptoBridge
     private static function manager(): CryptoManager
     {
         if (self::$manager === null) {
-            self::validateOptions(self::$options);
             $baseEnv = array_merge((array)getenv(), $_ENV, $_SERVER);
-            $config = CryptoConfig::fromEnv(array_replace($baseEnv, self::buildEnv()));
+            $keysDir = self::resolveKeysDir($baseEnv);
+            $options = self::$options;
+            $options['keys_dir'] = $keysDir;
+            self::validateOptions($options);
+
+            $config = CryptoConfig::fromEnv(array_replace($baseEnv, self::buildEnv($keysDir)));
             $logger = self::$options['logger'] ?? null;
             if ($logger !== null && !$logger instanceof LoggerInterface) {
                 throw new \InvalidArgumentException('logger must implement LoggerInterface');
@@ -223,11 +227,12 @@ final class CoreCryptoBridge
      *
      * @return array<string,string>
      */
-    private static function buildEnv(): array
+    private static function buildEnv(string $keysDir): array
     {
-        $env = [
-            'BLACKCAT_KEYS_DIR' => (string)(self::$options['keys_dir'] ?? ''),
-        ];
+        $env = [];
+        if ($keysDir !== '') {
+            $env['BLACKCAT_KEYS_DIR'] = $keysDir;
+        }
 
         if (array_key_exists('kms', self::$envOverrides)) {
             $env['BLACKCAT_KMS_ENDPOINTS'] = json_encode(self::$options['kms'] ?? []);
@@ -246,6 +251,22 @@ final class CoreCryptoBridge
         }
 
         return $env;
+    }
+
+    /**
+     * Resolve keys directory from explicit options or environment.
+     *
+     * @param array<string,mixed> $env
+     */
+    private static function resolveKeysDir(array $env): string
+    {
+        $opt = self::$options['keys_dir'] ?? null;
+        if (is_string($opt) && $opt !== '') {
+            return $opt;
+        }
+
+        $candidate = $env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null;
+        return is_string($candidate) ? $candidate : '';
     }
 
     private static function validateOptions(array $options): void
