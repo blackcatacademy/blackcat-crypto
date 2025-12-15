@@ -25,7 +25,7 @@ final class InMemoryKeyResolver implements KeyResolverInterface
                 }
             }
         }
-        return end($list) ?: throw new \RuntimeException('Empty key list');
+        return $list[count($list) - 1];
     }
 
     public function kmsBindings(KeySlot $slot): array

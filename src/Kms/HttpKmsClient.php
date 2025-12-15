@@ -9,6 +9,7 @@ use RuntimeException;
 
 final class HttpKmsClient implements KmsClientInterface
 {
+    /** @param array<string,mixed> $config */
     public function __construct(private readonly array $config)
     {
     }
@@ -18,6 +19,7 @@ final class HttpKmsClient implements KmsClientInterface
         return (string)($this->config['id'] ?? $this->config['endpoint'] ?? 'http-kms');
     }
 
+    /** @return array<string,mixed> */
     public function wrap(string $context, Payload $payload): array
     {
         $req = [
@@ -30,6 +32,7 @@ final class HttpKmsClient implements KmsClientInterface
         return $response + ['client' => $this->id()];
     }
 
+    /** @param array<string,mixed> $metadata */
     public function unwrap(string $context, array $metadata): Payload
     {
         $resp = $this->request('/unwrap', [
@@ -47,17 +50,25 @@ final class HttpKmsClient implements KmsClientInterface
         );
     }
 
+    /** @return array<string,mixed> */
     public function health(): array
     {
         return $this->request('/healthz', [], 'GET');
     }
 
-    /** @return array<string,mixed> */
+    /**
+     * @param array<string,mixed> $body
+     * @return array<string,mixed>
+     */
     private function request(string $path, array $body = [], string $method = 'POST'): array
     {
         $endpoint = rtrim((string)($this->config['endpoint'] ?? ''), '/');
         if ($endpoint === '') {
             throw new RuntimeException('HttpKmsClient requires endpoint');
+        }
+        $method = strtoupper($method);
+        if ($method === '') {
+            throw new RuntimeException('HttpKmsClient requires non-empty HTTP method');
         }
         $url = $endpoint . $path;
         $payload = $method === 'GET'
@@ -115,6 +126,8 @@ final class HttpKmsClient implements KmsClientInterface
 
     /**
      * @param list<string> $headers
+     * @param non-empty-string $url
+     * @param non-empty-string $method
      * @return array{0:int,1:string}
      */
     private function sendRequest(
@@ -162,6 +175,10 @@ final class HttpKmsClient implements KmsClientInterface
                 $error = curl_error($ch);
                 curl_close($ch);
                 throw new RuntimeException('KMS request failed: ' . $error);
+            }
+            if ($response === true) {
+                curl_close($ch);
+                throw new RuntimeException('KMS request failed: unexpected boolean response.');
             }
             $status = curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0;
             curl_close($ch);

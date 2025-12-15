@@ -19,6 +19,7 @@ final class KeyRotateCommand implements CommandInterface
         return 'Generate fresh key material for a slot into a directory (rotation helper).';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $positionals] = $this->parseArgs($args);

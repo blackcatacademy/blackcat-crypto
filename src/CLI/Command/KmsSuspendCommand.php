@@ -21,6 +21,7 @@ final class KmsSuspendCommand implements CommandInterface
         return 'Temporarily suspend a KMS client for a number of seconds.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $clientId = $args[0] ?? null;

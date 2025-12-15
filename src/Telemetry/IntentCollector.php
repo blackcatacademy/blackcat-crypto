@@ -51,6 +51,9 @@ final class IntentCollector
     ];
     private static ?self $global = null;
 
+    /**
+     * @param array<string,string>|null $ciContext
+     */
     public function __construct(
         private int $recentLimit = 50,
         private ?string $archivePath = null,
@@ -118,7 +121,8 @@ final class IntentCollector
             array_shift($this->recent);
         }
 
-        if ($this->archivePath) {
+        $archivePath = $this->archivePath;
+        if (is_string($archivePath) && $archivePath !== '') {
             if ($this->archiveMaxBytes !== null) {
                 $this->rotateArchiveIfNeeded();
             }
@@ -126,8 +130,11 @@ final class IntentCollector
                 'host' => gethostname() ?: 'unknown',
                 'pid' => getmypid(),
             ];
-            $line = json_encode(['meta' => $meta] + $entry) . PHP_EOL;
-            @file_put_contents($this->archivePath, $line, FILE_APPEND | LOCK_EX);
+            $encoded = json_encode(['meta' => $meta] + $entry);
+            if ($encoded !== false) {
+                $line = $encoded . PHP_EOL;
+                @file_put_contents($archivePath, $line, FILE_APPEND | LOCK_EX);
+            }
         }
     }
 
@@ -205,7 +212,7 @@ final class IntentCollector
             'run_id' => $runId ?: null,
             'job' => $job ?: null,
             'build_id' => $buildId ?: null,
-        ], static fn($v) => $v !== null && $v !== '');
+        ], static fn($v) => $v !== null);
 
         return $ctx === [] ? null : $ctx;
     }

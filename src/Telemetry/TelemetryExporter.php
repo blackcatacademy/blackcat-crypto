@@ -10,6 +10,7 @@ final class TelemetryExporter
 {
     /**
      * @param array<int,array<string,mixed>> $kmsHealth
+     * @param array<string,mixed>|null $ciMeta
      * @return array<string,mixed>
      */
     public static function snapshot(array $kmsHealth, ?WrapQueueInterface $queue = null, ?IntentCollector $collector = null, ?array $ciMeta = null): array
@@ -44,6 +45,7 @@ final class TelemetryExporter
         ];
     }
 
+    /** @param array<string,mixed> $snapshot */
     public static function asPrometheus(array $snapshot): string
     {
         $lines = [];
@@ -484,6 +486,7 @@ final class TelemetryExporter
 
     /**
      * @param array<string,string> $attrs
+     * @return array<string,mixed>
      */
     private static function gaugeMetric(string $name, string $description, int|float $value, int $ts, array $attrs = []): array
     {

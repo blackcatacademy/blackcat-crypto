@@ -19,6 +19,7 @@ final class KeysLintCommand implements CommandInterface
         return 'Lint keys directory against a manifest (presence + decoding + length).';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $positionals] = $this->parseArgs($args);
@@ -263,6 +264,7 @@ final class KeysLintCommand implements CommandInterface
         ];
     }
 
+    /** @param array<string,mixed> $report */
     private function printHuman(array $report): void
     {
         $ok = (bool)($report['ok'] ?? false);

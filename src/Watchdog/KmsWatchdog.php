@@ -12,6 +12,9 @@ final class KmsWatchdog
     private array $healthyStatuses;
     private int $suspendTtl;
 
+    /**
+     * @param array{healthy?:list<string>,suspend_ttl?:int}|array<string,mixed> $config
+     */
     public function __construct(
         private readonly KmsRouter $router,
         private readonly ?LoggerInterface $logger = null,

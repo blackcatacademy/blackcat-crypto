@@ -70,6 +70,7 @@ final class DbSnapshotCommand implements CommandInterface
 
     /**
      * @param list<string> $args
+     * @param list<string> $keys
      */
     private function parseArg(array $args, array $keys, ?string $default = null): ?string
     {

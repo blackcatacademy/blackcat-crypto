@@ -10,6 +10,7 @@ final class WrapStatusCommand implements CommandInterface
     public function name(): string { return 'wrap:status'; }
     public function description(): string { return 'Inspect envelope metadata (context, wrap count, KMS client).'; }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $file = $args[0] ?? null;

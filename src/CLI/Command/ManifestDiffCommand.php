@@ -15,6 +15,7 @@ final class ManifestDiffCommand implements CommandInterface
         return 'Compare two manifest files (slots + rotation entries).';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $positionals] = $this->parseArgs($args);
@@ -48,13 +49,21 @@ final class ManifestDiffCommand implements CommandInterface
             $this->printDiff($diff, $fromPath, $toPath);
         }
 
-        $hasChanges = array_reduce($diff, static function (bool $carry, $value) {
-            return $carry || (is_array($value) && count($value) > 0);
-        }, false);
+        $hasChanges = false;
+        foreach ($diff as $value) {
+            if ($value !== []) {
+                $hasChanges = true;
+                break;
+            }
+        }
 
         return $hasChanges ? 2 : 0;
     }
 
+    /**
+     * @param list<string> $args
+     * @return array{0:array<string,string>,1:list<string>}
+     */
     private function parseArgs(array $args): array
     {
         $options = [];
@@ -113,6 +122,7 @@ final class ManifestDiffCommand implements CommandInterface
         return $changes;
     }
 
+    /** @param array<string,mixed> $diff */
     private function printDiff(array $diff, string $from, string $to): void
     {
         echo "Manifest diff ({$from} -> {$to})\n";

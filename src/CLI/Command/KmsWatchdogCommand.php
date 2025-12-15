@@ -22,6 +22,7 @@ final class KmsWatchdogCommand implements CommandInterface
         return 'Monitor KMS health and suspend unhealthy clients automatically.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $interval = $this->parseIntOption($args, '--interval', 30);
@@ -48,6 +49,7 @@ final class KmsWatchdogCommand implements CommandInterface
         return 0;
     }
 
+    /** @param list<string> $args */
     private function parseIntOption(array $args, string $name, int $default): int
     {
         foreach ($args as $index => $arg) {

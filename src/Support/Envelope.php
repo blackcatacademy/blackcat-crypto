@@ -5,6 +5,10 @@ namespace BlackCat\Crypto\Support;
 
 final class Envelope
 {
+    /**
+     * @param array<string,mixed> $kmsMetadata
+     * @param array<string,mixed> $meta
+     */
     public function __construct(
         public readonly Payload $local,
         public readonly array $kmsMetadata,
@@ -12,6 +16,7 @@ final class Envelope
         public readonly array $meta = [],
     ) {}
 
+    /** @param array<string,mixed> $kmsMetadata */
     public static function fromLayers(Payload $local, array $kmsMetadata, string $context): self
     {
         $meta = [
@@ -32,6 +37,10 @@ final class Envelope
             throw new \RuntimeException('Invalid envelope');
         }
         $local = $data['local'];
+        $kms = $data['kms'];
+        if (!is_array($kms)) {
+            throw new \RuntimeException('Invalid envelope KMS metadata');
+        }
         $cipherB64 = (string)($local['ciphertext'] ?? '');
         $nonceB64 = (string)($local['nonce'] ?? '');
         $ciphertext = base64_decode($cipherB64, true);
@@ -39,18 +48,26 @@ final class Envelope
         if ($ciphertext === false || $nonce === false) {
             throw new \RuntimeException('Invalid envelope payload encoding');
         }
+        $localMeta = $local['meta'] ?? [];
+        if (!is_array($localMeta)) {
+            $localMeta = [];
+        }
+        $envelopeMeta = $data['meta'] ?? [];
+        if (!is_array($envelopeMeta)) {
+            $envelopeMeta = [];
+        }
         $payload = new Payload(
             ciphertext: $ciphertext,
             nonce: $nonce,
             keyId: (string)($local['keyId'] ?? ''),
-            meta: $local['meta'] ?? []
+            meta: $localMeta
         );
-        return new self($payload, $data['kms'], $data['context'], $data['meta'] ?? []);
+        return new self($payload, $kms, $data['context'], $envelopeMeta);
     }
 
     public function encode(): string
     {
-        return json_encode([
+        $json = json_encode([
             'context' => $this->context,
             'local' => [
                 'ciphertext' => base64_encode($this->local->ciphertext),
@@ -61,5 +78,9 @@ final class Envelope
             'kms' => $this->kmsMetadata,
             'meta' => $this->meta,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            throw new \RuntimeException('Unable to encode envelope.');
+        }
+        return $json;
     }
 }

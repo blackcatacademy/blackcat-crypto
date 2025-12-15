@@ -15,6 +15,7 @@ final class ManifestValidateCommand implements CommandInterface
         return 'Validate a manifest structure and report issues.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $json = false;

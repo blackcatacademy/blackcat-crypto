@@ -15,20 +15,20 @@ use InvalidArgumentException;
 final class ApprovalInbox
 {
     private GovernanceReporter $reporter;
-    private IntentCollector $collector;
 
     /** @var array<string,array<string,mixed>> */
     private array $items = [];
 
     public function __construct(?GovernanceReporter $reporter = null, ?IntentCollector $collector = null)
     {
-        $this->reporter = $reporter ?? new GovernanceReporter();
-        $this->collector = $collector ?? IntentCollector::global();
+        $collector = $collector ?? IntentCollector::global();
+        $this->reporter = $reporter ?? new GovernanceReporter($collector);
     }
 
     /**
      * Queue a new approval request.
      *
+     * @param array<string,mixed> $ctx
      * @return string approval id
      */
     public function enqueue(array $ctx): string
@@ -55,6 +55,9 @@ final class ApprovalInbox
 
     /**
      * Mark an approval as granted and emit telemetry.
+     *
+     * @param array<string,mixed> $ctx
+     * @return array<string,mixed>
      */
     public function approve(string $approvalId, array $ctx = []): array
     {
@@ -72,6 +75,9 @@ final class ApprovalInbox
 
     /**
      * Mark an approval as rejected and emit telemetry.
+     *
+     * @param array<string,mixed> $ctx
+     * @return array<string,mixed>
      */
     public function deny(string $approvalId, array $ctx = []): array
     {
@@ -110,6 +116,7 @@ final class ApprovalInbox
         return $this->items;
     }
 
+    /** @return array<string,mixed> */
     private function get(string $approvalId): array
     {
         if (!isset($this->items[$approvalId])) {

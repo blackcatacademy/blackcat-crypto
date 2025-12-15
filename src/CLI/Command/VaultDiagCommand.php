@@ -18,6 +18,7 @@ final class VaultDiagCommand implements CommandInterface
         return 'Inspect legacy FileVault payloads (.enc) and report metadata / format status.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $paths] = $this->parseArgs($args);

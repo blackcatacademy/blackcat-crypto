@@ -27,6 +27,7 @@ final class WrapJob
         $this->id = $id ?? bin2hex(random_bytes(8));
     }
 
+    /** @param array<string,mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(

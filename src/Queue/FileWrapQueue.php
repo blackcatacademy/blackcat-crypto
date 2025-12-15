@@ -107,7 +107,10 @@ final class FileWrapQueue implements WrapQueueInterface
         }
     }
 
-    /** @return resource */
+    /**
+     * @param int<0,7> $lock
+     * @return resource
+     */
     private function open(int $lock)
     {
         $handle = fopen($this->path, 'c+');
@@ -121,6 +124,7 @@ final class FileWrapQueue implements WrapQueueInterface
         return $handle;
     }
 
+    /** @param resource $handle */
     private function close($handle): void
     {
         flock($handle, LOCK_UN);

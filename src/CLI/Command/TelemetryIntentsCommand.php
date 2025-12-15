@@ -18,6 +18,7 @@ final class TelemetryIntentsCommand implements CommandInterface
         return 'Export intent telemetry (counts/recent) in JSON, Prometheus, or OTLP/JSON.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $collector = IntentCollector::global();
@@ -48,6 +49,7 @@ final class TelemetryIntentsCommand implements CommandInterface
         return 0;
     }
 
+    /** @param list<string> $args */
     private function parseOption(array $args, string $name, string $default): string
     {
         foreach ($args as $index => $arg) {

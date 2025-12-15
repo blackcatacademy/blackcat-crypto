@@ -23,6 +23,7 @@ final class TelemetrySseCommand implements CommandInterface
         return 'Stream telemetry snapshots as Server-Sent Events.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $interval = $this->parseOption($args, '--interval', 5);
@@ -36,10 +37,11 @@ final class TelemetrySseCommand implements CommandInterface
             static fn () => TelemetryExporter::snapshot($router->health(), $queue),
             max(1, $interval),
             $iterations > 0 ? $iterations : null
-        );
+            );
         return 0;
     }
 
+    /** @param list<string> $args */
     private function parseOption(array $args, string $name, int $default): int
     {
         foreach ($args as $index => $arg) {

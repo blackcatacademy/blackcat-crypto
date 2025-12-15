@@ -24,6 +24,7 @@ final class WrapQueueCommand implements CommandInterface
         return 'Inspect or process the rotation queue (status|run).';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$action, $options] = $this->extractActionAndOptions($args);
@@ -40,6 +41,7 @@ final class WrapQueueCommand implements CommandInterface
             : $this->printStatus($queue, $options);
     }
 
+    /** @param array<string,mixed> $options */
     private function printStatus(WrapQueueInterface $queue, array $options): int
     {
         $limit = isset($options['limit']) ? max(1, (int)$options['limit']) : 25;
@@ -59,6 +61,7 @@ final class WrapQueueCommand implements CommandInterface
         return 0;
     }
 
+    /** @param array<string,mixed> $options */
     private function runProcessor(CryptoConfig $config, WrapQueueInterface $queue, array $options): int
     {
         $limit = isset($options['limit']) ? max(1, (int)$options['limit']) : 10;

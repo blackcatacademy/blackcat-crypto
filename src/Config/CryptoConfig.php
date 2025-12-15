@@ -9,6 +9,12 @@ use Closure;
 
 final class CryptoConfig
 {
+    /**
+     * @param list<array<string,mixed>> $keySources
+     * @param array<string,array<string,mixed>> $slots
+     * @param array<int|string,mixed> $kms
+     * @param array<string,array<string,mixed>> $rotationPolicies
+     */
     public function __construct(
         private readonly array $keySources = [],
         private readonly array $slots = [],
@@ -20,6 +26,7 @@ final class CryptoConfig
         private readonly ?string $manifestPath = null,
     ) {}
 
+    /** @param array<string,mixed> $env */
     public static function fromEnv(array $env = []): self
     {
         // merge all possible env sources so putenv/$_ENV/$_SERVER are seen in tests and runtime
@@ -87,7 +94,7 @@ final class CryptoConfig
         );
     }
 
-    /** @return array<int,array<string,mixed>> */
+    /** @return list<array<string,mixed>> */
     public function keySources(): array
     {
         return $this->keySources;
@@ -99,7 +106,7 @@ final class CryptoConfig
         return $this->slots;
     }
 
-    /** @return array<string,mixed> */
+    /** @return array<int|string,mixed> */
     public function kmsConfig(): array
     {
         return $this->kms;

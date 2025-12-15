@@ -107,6 +107,8 @@ final class CryptoManager
      * Encrypt plaintext for a logical context (e.g. `users.pii`).
      *
      * Returns an {@see Envelope} which includes metadata (KMS client, local key id, wrap count, ...).
+     *
+     * @param array<string,mixed> $options
      */
     public function encryptContext(string $context, string $plaintext, array $options = []): Envelope
     {
@@ -117,7 +119,7 @@ final class CryptoManager
         $wrapped = $this->kms->wrap(
             $context,
             $payload,
-            $this->keyRegistry->kmsBindings($context),
+            [],
             ['preferredClient' => $options['preferredClient'] ?? null]
         );
 
@@ -337,6 +339,9 @@ final class CryptoManager
         }
     }
 
+    /**
+     * @param array<string,mixed> $payload
+     */
     private function recordIntent(string $intent, array $payload): void
     {
         $collector = $this->intents ?? IntentCollector::global();

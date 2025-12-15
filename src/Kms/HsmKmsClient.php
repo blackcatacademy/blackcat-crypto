@@ -14,6 +14,9 @@ use RuntimeException;
  */
 final class HsmKmsClient implements KmsClientInterface
 {
+    /**
+     * @param array<string,mixed> $config
+     */
     public function __construct(private readonly array $config)
     {
     }
@@ -65,6 +68,7 @@ final class HsmKmsClient implements KmsClientInterface
         }
     }
 
+    /** @return array<string,mixed> */
     public function wrap(string $context, Payload $payload): array
     {
         $tenant = $this->extractTenant(null, $context);
@@ -111,6 +115,7 @@ final class HsmKmsClient implements KmsClientInterface
         return $meta;
     }
 
+    /** @param array<string,mixed> $metadata */
     public function unwrap(string $context, array $metadata): Payload
     {
         $tenant = $this->extractTenant($metadata, $context);
@@ -149,6 +154,7 @@ final class HsmKmsClient implements KmsClientInterface
         return new Payload(ciphertext: $plaintext, nonce: $innerNonce, keyId: $keyId, meta: ['client' => $this->id(), 'cipher' => $cipher]);
     }
 
+    /** @return array<string,mixed> */
     public function health(): array
     {
         $key = null;
@@ -279,13 +285,20 @@ final class HsmKmsClient implements KmsClientInterface
         return $withContext ? $base . $separator . $context : $base;
     }
 
+    /** @return int<1,max> */
     private function nonceLength(string $cipher): int
     {
         $configured = (int)($this->config['nonce_bytes'] ?? 12);
-        $min = openssl_cipher_iv_length($cipher) ?: 12;
-        return max($min, $configured, 12);
+        $ivLen = openssl_cipher_iv_length($cipher);
+        $min = (is_int($ivLen) && $ivLen > 0) ? $ivLen : 12;
+        $length = max(12, $min, $configured);
+        if ($length < 1) {
+            $length = 1;
+        }
+        return $length;
     }
 
+    /** @param array<string,mixed>|null $metadata */
     private function extractTenant(?array $metadata, string $context): ?string
     {
         $metaTenant = $metadata['tenant'] ?? null;
@@ -298,9 +311,10 @@ final class HsmKmsClient implements KmsClientInterface
         return null;
     }
 
+    /** @return array<string,mixed> */
     private function readSuspendState(): array
     {
-        $path = $this->config['suspend_path'] ?? null;
+        $path = $this->suspendPath();
         if ($path === null) {
             return ['suspend' => false];
         }
@@ -315,6 +329,7 @@ final class HsmKmsClient implements KmsClientInterface
         return $json + ['suspend' => false];
     }
 
+    /** @return array<string,mixed> */
     private function isSuspended(): array
     {
         $state = $this->readSuspendState();
@@ -333,6 +348,7 @@ final class HsmKmsClient implements KmsClientInterface
         return $state;
     }
 
+    /** @param array<string,mixed> $state */
     private function persistSuspendState(array $state): void
     {
         $path = $this->suspendPath();

@@ -18,6 +18,7 @@ final class VaultCoverageCommand implements CommandInterface
         return 'Aggregate vault coverage diag/summary files (JSON or NDJSON).';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $files] = $this->parseArgs($args);
@@ -68,7 +69,8 @@ final class VaultCoverageCommand implements CommandInterface
     }
 
     /**
-     * @return array{table:bool,top:int}
+     * @param list<string> $args
+     * @return array{0:array{table:bool,top:int},1:list<string>}
      */
     private function parseArgs(array $args): array
     {
@@ -134,6 +136,7 @@ final class VaultCoverageCommand implements CommandInterface
         return ['type' => 'diag', 'data' => $entries];
     }
 
+    /** @param array<string,mixed> $payload */
     private function looksLikeCoverage(array $payload): bool
     {
         return array_key_exists('total', $payload)
@@ -141,6 +144,7 @@ final class VaultCoverageCommand implements CommandInterface
             && array_key_exists('contexts', $payload);
     }
 
+    /** @param array<mixed> $payload */
     private function looksLikeDiagArray(array $payload): bool
     {
         if ($payload === []) {
@@ -157,7 +161,7 @@ final class VaultCoverageCommand implements CommandInterface
     }
 
     /**
-     * @param array<int,array<string,mixed>> $payload
+     * @param array<mixed> $payload
      * @return array<int,array<string,mixed>>
      */
     private function normalizeDiagArray(array $payload): array
@@ -229,6 +233,7 @@ final class VaultCoverageCommand implements CommandInterface
         printf("%-50s %d\n", 'Missing metadata', (int) $coverage['missingMeta']);
     }
 
+    /** @param array<mixed> $payload */
     private function isList(array $payload): bool
     {
         if (function_exists('array_is_list')) {
@@ -236,7 +241,7 @@ final class VaultCoverageCommand implements CommandInterface
         }
         $i = 0;
         foreach ($payload as $key => $_) {
-            if ($key !== $i++) {
+            if ($key !== $i) {
                 return false;
             }
             $i++;

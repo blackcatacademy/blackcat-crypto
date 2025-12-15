@@ -14,6 +14,7 @@ final class KmsDiagCommand implements CommandInterface
     public function name(): string { return 'kms:diag'; }
     public function description(): string { return 'Print health information for configured KMS clients.'; }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $config = CryptoConfig::fromEnv();

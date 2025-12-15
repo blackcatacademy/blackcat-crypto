@@ -18,6 +18,7 @@ final class VaultMigrateCommand implements CommandInterface
         return 'Rewrap legacy FileVault binary into CryptoManager envelope.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $positionals] = $this->parseArgs($args);
@@ -62,7 +63,7 @@ final class VaultMigrateCommand implements CommandInterface
     }
 
     /**
-     * @return array{mode:string,nonce?:string,cipher?:string,header?:string,frames?:string,keyId:?string}
+     * @return array{mode:'single',nonce:string,cipher:string,keyId:?string}|array{mode:'stream',header:string,frames:string,keyId:?string}
      */
     private function parseLegacyPayload(string $data): array
     {
@@ -114,9 +115,6 @@ final class VaultMigrateCommand implements CommandInterface
         $tag = substr($data, $ptr, $tagLen);
         $ptr += $tagLen;
         $cipher = substr($data, $ptr);
-        if ($cipher === false) {
-            throw new RuntimeException('Missing ciphertext');
-        }
 
         return [
             'mode' => 'single',
@@ -127,21 +125,22 @@ final class VaultMigrateCommand implements CommandInterface
     }
 
     /**
-     * @param array<string,string> $candidates
+     * @param array{mode:'stream',header:string,frames:string,keyId:?string} $parsed
+     * @param list<array{id:string,bytes:string,slot:string}> $candidates
      */
-    private function decryptSecretStream(array $parsed, array $candidates, ?string $preferredKeyId = null): string
+    private function decryptSecretStream(array $parsed, array $candidates, ?string $preferredKeyId = null): ?string
     {
         if ($preferredKeyId !== null) {
             usort($candidates, static function ($a, $b) use ($preferredKeyId): int {
-                $aPref = (($a['id'] ?? '') === $preferredKeyId) ? 0 : 1;
-                $bPref = (($b['id'] ?? '') === $preferredKeyId) ? 0 : 1;
+                $aPref = ($a['id'] === $preferredKeyId) ? 0 : 1;
+                $bPref = ($b['id'] === $preferredKeyId) ? 0 : 1;
                 return $aPref <=> $bPref;
             });
         }
 
         foreach ($candidates as $candidate) {
-            $bytes = $candidate['bytes'] ?? null;
-            if (!$bytes) {
+            $bytes = $candidate['bytes'];
+            if ($bytes === '') {
                 continue;
             }
             try {
@@ -172,16 +171,18 @@ final class VaultMigrateCommand implements CommandInterface
                         return $plain;
                     }
                 }
+                throw new RuntimeException('Secretstream did not reach final tag');
             } catch (\Throwable $_) {
                 continue;
             }
         }
 
-        throw new RuntimeException('Unable to decode secretstream payload with available keys');
+        return null;
     }
 
     /**
-     * @return array{options:array<string,string>,positionals:list<string>}
+     * @param list<string> $args
+     * @return array{0:array<string,string>,1:list<string>}
      */
     private function parseArgs(array $args): array
     {

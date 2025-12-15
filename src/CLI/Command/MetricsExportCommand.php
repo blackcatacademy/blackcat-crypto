@@ -22,6 +22,7 @@ final class MetricsExportCommand implements CommandInterface
         return 'Emit telemetry snapshot (JSON, Prometheus, or OTLP/JSON).';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$format, $options] = $this->parseFormat($args);

@@ -67,6 +67,7 @@ final class Application
         $this->commands[$command->name()] = $command;
     }
 
+    /** @param list<string> $argv */
     public function run(array $argv): int
     {
         $command = $argv[1] ?? 'help';

@@ -12,6 +12,7 @@ final class KeyGenerateCommand implements CommandInterface
     public function name(): string { return 'key:generate'; }
     public function description(): string { return '[DEPRECATED] Alias for key:rotate (use key:rotate).'; }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $slot = $args[0] ?? null;

@@ -21,6 +21,7 @@ final class KmsResumeCommand implements CommandInterface
         return 'Resume a suspended KMS client immediately.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $clientId = $args[0] ?? null;

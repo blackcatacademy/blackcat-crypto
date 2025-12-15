@@ -17,6 +17,7 @@ final class ManifestShowCommand implements CommandInterface
         return 'Print loaded manifest (slots + rotation policies) or write it to disk.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $env = $_ENV + $_SERVER;

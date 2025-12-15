@@ -22,10 +22,11 @@ final class CoreCryptoBridge
     private const SLOT_HMAC_SESSION = 'core.hmac.session';
     private const SLOT_VAULT = 'core.vault';
 
-    /** @var null|callable(string,array):void */
+    /** @var null|callable(string,array<string,mixed>):void */
     private static $intentEmitter = null;
     private static ?\BlackCat\Crypto\Telemetry\IntentCollector $intentCollector = null;
     private static ?CryptoManager $manager = null;
+    /** @var array<string,mixed> */
     private static array $options = [
         'context_prefix' => self::DEFAULT_PREFIX,
         'wrap_queue' => 'memory',
@@ -40,6 +41,7 @@ final class CoreCryptoBridge
      *
      * Callers should provide `keys_dir` (or set it via env).
      */
+    /** @param array<string,mixed> $options */
     public static function configure(array $options): void
     {
         self::$options = array_replace(self::$options, $options);
@@ -55,7 +57,7 @@ final class CoreCryptoBridge
     /**
      * Optional hook to broadcast crypto intents (encrypt/decrypt/hmac/verify).
      *
-     * @param null|callable(string,array):void $emitter receives ($intent, $payload)
+     * @param null|callable(string,array<string,mixed>):void $emitter receives ($intent, $payload)
      */
     public static function registerIntentEmitter(?callable $emitter): void
     {
@@ -86,7 +88,11 @@ final class CoreCryptoBridge
 
         if ($decoded['keyId'] !== null) {
             $payload = new Payload($decoded['ciphertext'], $decoded['nonce'], $decoded['keyId']);
-            $out = $manager->decryptLocal(self::slot($slot), $payload);
+            try {
+                $out = $manager->decryptLocal(self::slot($slot), $payload);
+            } catch (\Throwable) {
+                $out = $manager->decryptLocalWithAnyKey(self::slot($slot), $decoded['nonce'], $decoded['ciphertext'], $decoded['keyId']);
+            }
             self::emitIntent('decrypt', [
                 'slot' => $slot,
                 'keyId' => $decoded['keyId'],
@@ -234,10 +240,18 @@ final class CoreCryptoBridge
         }
 
         if (array_key_exists('kms', self::$envOverrides)) {
-            $env['BLACKCAT_KMS_ENDPOINTS'] = json_encode(self::$options['kms'] ?? []);
+            $json = json_encode(self::$options['kms'] ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if ($json === false) {
+                throw new \InvalidArgumentException('CoreCryptoBridge kms config must be JSON encodable.');
+            }
+            $env['BLACKCAT_KMS_ENDPOINTS'] = $json;
         }
         if (array_key_exists('rotation', self::$envOverrides)) {
-            $env['BLACKCAT_CRYPTO_ROTATION'] = json_encode(self::$options['rotation'] ?? []);
+            $json = json_encode(self::$options['rotation'] ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if ($json === false) {
+                throw new \InvalidArgumentException('CoreCryptoBridge rotation config must be JSON encodable.');
+            }
+            $env['BLACKCAT_CRYPTO_ROTATION'] = $json;
         }
         if (array_key_exists('aead', self::$envOverrides)) {
             $env['BLACKCAT_CRYPTO_AEAD'] = (string)(self::$options['aead'] ?? 'xchacha');
@@ -268,6 +282,7 @@ final class CoreCryptoBridge
         return is_string($candidate) ? $candidate : '';
     }
 
+    /** @param array<string,mixed> $options */
     private static function validateOptions(array $options): void
     {
         $keysDir = (string)($options['keys_dir'] ?? '');
@@ -296,7 +311,7 @@ final class CoreCryptoBridge
 
     private static function packPayload(Payload $payload): string
     {
-        $keyId = $payload->keyId;
+        $keyId = $payload->keyId ?? '';
         $keyLen = strlen($keyId);
         if ($keyLen > 255) {
             $keyId = substr($keyId, 0, 255);
@@ -331,9 +346,6 @@ final class CoreCryptoBridge
         $version = ord($data[$ptr++]);
         $keyId = null;
         if ($version >= self::VERSION) {
-            if ($ptr >= $len) {
-                throw new \InvalidArgumentException('Payload missing key id length');
-            }
             $keyLen = ord($data[$ptr++]);
             if ($ptr + $keyLen > $len) {
                 throw new \InvalidArgumentException('Payload key id out of bounds');
@@ -346,7 +358,7 @@ final class CoreCryptoBridge
             throw new \InvalidArgumentException('Payload missing nonce length');
         }
         $nonceLen = ord($data[$ptr++]);
-        if ($nonceLen < 1 || $nonceLen > 255) {
+        if ($nonceLen < 1) {
             throw new \InvalidArgumentException('Invalid nonce length');
         }
         if ($ptr + $nonceLen > $len) {
@@ -355,7 +367,7 @@ final class CoreCryptoBridge
         $nonce = substr($data, $ptr, $nonceLen);
         $ptr += $nonceLen;
         $ciphertext = substr($data, $ptr);
-        if ($ciphertext === false || $ciphertext === '') {
+        if ($ciphertext === '') {
             throw new \InvalidArgumentException('Payload missing ciphertext');
         }
 
@@ -367,6 +379,9 @@ final class CoreCryptoBridge
         ];
     }
 
+    /**
+     * @param array<string,mixed> $payload
+     */
     private static function emitIntent(string $intent, array $payload): void
     {
         $emitter = self::$intentEmitter;

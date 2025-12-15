@@ -15,6 +15,7 @@ final class VaultReportCommand implements CommandInterface
         return 'Aggregate metadata (contexts, key versions) across a vault directory.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $paths] = $this->parseArgs($args);
@@ -93,7 +94,7 @@ final class VaultReportCommand implements CommandInterface
         }
 
         if ($manifest !== []) {
-            $present = array_keys(array_filter($result['contexts']));
+            $present = array_keys($result['contexts']);
             $result['unused_manifest_contexts'] = array_values(array_diff($manifest, $present));
             $unusedCount = count($result['unused_manifest_contexts']);
             if (!empty($options['fail-on-unused']) && $unusedCount > 0) {

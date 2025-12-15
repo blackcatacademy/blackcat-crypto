@@ -21,9 +21,6 @@ final class HybridKyberAesCipher implements AeadCipherInterface
         $ephemeral = random_bytes(32); // kyber-like shared secret stub
         $derived = hash_hkdf('sha3-256', $key->bytes . $ephemeral, 32, $aad);
         $cipher = sodium_crypto_aead_xchacha20poly1305_ietf_encrypt($plaintext, $aad . $ephemeral, $nonce, $derived);
-        if ($cipher === false) {
-            throw new \RuntimeException('Hybrid encryption failed');
-        }
         return new Payload($ephemeral . $cipher, $nonce, $key->id, ['mode' => 'hybrid']);
     }
 
@@ -34,6 +31,7 @@ final class HybridKyberAesCipher implements AeadCipherInterface
         $derived = hash_hkdf('sha3-256', $key->bytes . $ephemeral, 32, $aad);
         $plain = sodium_crypto_aead_xchacha20poly1305_ietf_decrypt($ciphertext, $aad . $ephemeral, $payload->nonce, $derived);
         if ($plain === false) {
+            $this->logger?->debug('Hybrid decrypt failed', ['keyId' => $key->id]);
             throw new \RuntimeException('Hybrid decrypt failed');
         }
         return $plain;

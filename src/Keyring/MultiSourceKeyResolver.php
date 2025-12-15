@@ -13,6 +13,9 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
     private const FILE_EXT_HEX = 'hex';
     private const FILE_EXT_B64 = 'b64';
 
+    /**
+     * @param list<array<string,mixed>> $sources
+     */
     public function __construct(
         private readonly array $sources,
         private readonly ?LoggerInterface $logger = null,
@@ -114,7 +117,10 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         return $keys;
     }
 
-    /** @return list<KeyMaterial> */
+    /**
+     * @param array<string,mixed> $source
+     * @return list<KeyMaterial>
+     */
     private function filesystemLoader(KeySlot $slot, array $source): array
     {
         $dir = $source['path'] ?? null;
@@ -135,6 +141,7 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
             glob($dir . '/*.' . self::FILE_EXT_B64) ?: [],
         );
 
+        /** @var list<array{version:int,ext:string,file:string}> $versioned */
         $versioned = [];
         foreach ($allFiles as $file) {
             $base = basename($file);
@@ -172,8 +179,8 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
                 if ($byVer !== 0) {
                     return $byVer;
                 }
-                $wa = self::extWeight((string)($a['ext'] ?? ''));
-                $wb = self::extWeight((string)($b['ext'] ?? ''));
+                $wa = self::extWeight((string)$a['ext']);
+                $wb = self::extWeight((string)$b['ext']);
                 if ($wa !== $wb) {
                     return $wa <=> $wb;
                 }
@@ -184,14 +191,14 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         $result = [];
         $seenVersions = [];
         foreach ($versioned as $entry) {
-            $ver = (int)($entry['version'] ?? 0);
+            $ver = (int)$entry['version'];
             if ($ver < 1 || isset($seenVersions[$ver])) {
                 continue;
             }
             $seenVersions[$ver] = true;
 
             $file = (string)$entry['file'];
-            $ext = strtolower((string)($entry['ext'] ?? 'key'));
+            $ext = strtolower((string)$entry['ext']);
             $bytes = $this->loadKeyBytesFromFile($file, $ext, $expectedLen);
             if (!is_string($bytes)) {
                 continue;
@@ -206,7 +213,10 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         return $result;
     }
 
-    /** @return list<KeyMaterial> */
+    /**
+     * @param array<string,mixed> $source
+     * @return list<KeyMaterial>
+     */
     private function envLoader(KeySlot $slot, array $source): array
     {
         $prefix = $source['prefix'] ?? 'BC_KEY_';
@@ -258,7 +268,7 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
 
         $seenVersions = [];
         foreach ($entries as $e) {
-            $ver = (int)($e['version'] ?? 0);
+            $ver = (int)$e['version'];
             if ($ver < 1 || isset($seenVersions[$ver])) {
                 continue;
             }

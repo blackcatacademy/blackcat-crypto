@@ -34,7 +34,7 @@ final class DatabaseCryptoHooks
             kmsHealth: $kmsHealth,
             queue: $queue,
             collector: $collector ?? $this->collector,
-            ciMeta: array_filter($ciMeta, static fn($v) => $v !== null && $v !== '')
+            ciMeta: array_filter($ciMeta, static fn($v) => $v !== null)
         );
 
         $snapshotPath = getenv('DB_CRYPTO_SNAPSHOT_PATH');

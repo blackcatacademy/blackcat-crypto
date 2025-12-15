@@ -17,6 +17,9 @@ final class KmsRouter
     private array $suspendedUntil = [];
     private string $suspendedCachePath;
 
+    /**
+     * @param array<int|string,mixed> $config
+     */
     public function __construct(array $config, private readonly ?LoggerInterface $logger = null)
     {
         $this->suspendedCachePath = (string)($config['suspended_cache'] ?? getenv('BLACKCAT_KMS_SUSPEND_CACHE') ?: sys_get_temp_dir() . '/blackcat-kms-suspend.json');
@@ -41,6 +44,11 @@ final class KmsRouter
         }
     }
 
+    /**
+     * @param array<string,mixed> $bindings
+     * @param array<string,mixed> $options
+     * @return array<string,mixed>
+     */
     public function wrap(string $context, Payload $payload, array $bindings, array $options = []): array
     {
         $tenant = (string)($options['tenant'] ?? ($bindings['tenant'] ?? ''));
@@ -57,6 +65,7 @@ final class KmsRouter
         return $meta;
     }
 
+    /** @param array<string,mixed> $metadata */
     public function unwrap(string $context, array $metadata): Payload
     {
         $clientId = $metadata['client'] ?? null;
@@ -83,6 +92,7 @@ final class KmsRouter
         throw new \RuntimeException('Unknown KMS client ' . $clientId);
     }
 
+    /** @return array<int,array<string,mixed>> */
     public function health(): array
     {
         $health = [];
@@ -187,6 +197,7 @@ final class KmsRouter
         return $matches;
     }
 
+    /** @param list<string> $patterns */
     private function matchesAny(string $context, array $patterns): bool
     {
         foreach ($patterns as $pattern) {
@@ -198,11 +209,18 @@ final class KmsRouter
         return false;
     }
 
+    /**
+     * @param array<string,mixed> $definition
+     */
     private function clientFromDefinition(array $definition): KmsClientInterface
     {
         $type = $definition['type'] ?? 'http';
         $class = $definition['class'] ?? null;
-        if ($class && class_exists($class)) {
+        if (is_string($class) && $class !== '' && class_exists($class)) {
+            if (!is_subclass_of($class, KmsClientInterface::class)) {
+                throw new \InvalidArgumentException('KMS client class must implement KmsClientInterface: ' . $class);
+            }
+            /** @var class-string<KmsClientInterface> $class */
             return new $class($definition);
         }
         if ($type === 'hsm') {
@@ -211,6 +229,7 @@ final class KmsRouter
         return new HttpKmsClient($definition);
     }
 
+    /** @return array<string,mixed> */
     private function localMetadata(Payload $payload): array
     {
         return [
@@ -253,6 +272,9 @@ final class KmsRouter
         if (!is_dir($dir)) {
             @mkdir($dir, 0775, true);
         }
-        file_put_contents($this->suspendedCachePath, json_encode($this->suspendedUntil));
+        $json = json_encode($this->suspendedUntil);
+        if ($json !== false) {
+            file_put_contents($this->suspendedCachePath, $json);
+        }
     }
 }

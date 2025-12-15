@@ -70,6 +70,7 @@ final class LowRiskApprovalService
         ];
     }
 
+    /** @param array{max_amount:int,max_sensitivity:string,burst:int,window:int} $limits */
     private function isApproved(string $sensitivity, int $amount, array $limits): bool
     {
         $rank = $this->rankSensitivity($sensitivity);

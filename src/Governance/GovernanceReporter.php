@@ -15,21 +15,25 @@ final class GovernanceReporter
     {
     }
 
+    /** @param array<string,mixed> $ctx */
     public function approved(array $ctx): void
     {
         $this->record('approved', $ctx);
     }
 
+    /** @param array<string,mixed> $ctx */
     public function denied(array $ctx): void
     {
         $this->record('denied', $ctx);
     }
 
+    /** @param array<string,mixed> $ctx */
     public function queued(array $ctx): void
     {
         $this->record('queued', $ctx);
     }
 
+    /** @param array<string,mixed> $ctx */
     private function record(string $decision, array $ctx): void
     {
         $collector = IntentCollector::global();

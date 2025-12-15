@@ -17,6 +17,7 @@ final class VaultDecryptCommand implements CommandInterface
         return 'Decrypt a FileVault .enc payload and print/write the plaintext.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         [$options, $positionals] = $this->parseArgs($args);
@@ -81,7 +82,7 @@ final class VaultDecryptCommand implements CommandInterface
     }
 
     /**
-     * @return array{mode:string,nonce:string,cipher:string,keyId?:string}|array{mode:string,header:string,frames:string,keyId?:string}
+     * @return array{mode:'single',nonce:string,cipher:string,keyId?:string}|array{mode:'stream',header:string,frames:string,keyId?:string}
      */
     private function parsePayload(string $data): array
     {
@@ -122,22 +123,22 @@ final class VaultDecryptCommand implements CommandInterface
     }
 
     /**
-     * @param array{header:string,frames:string} $parsed
+     * @param array{mode:'stream',header:string,frames:string,keyId?:string} $parsed
      * @param list<array{id:string,bytes:string,slot:string}> $candidates
      */
     private function decryptStream(array $parsed, array $candidates, ?string $preferredKeyId = null): ?string
     {
         if ($preferredKeyId !== null) {
             usort($candidates, static function ($a, $b) use ($preferredKeyId): int {
-                $aPref = (($a['id'] ?? '') === $preferredKeyId) ? 0 : 1;
-                $bPref = (($b['id'] ?? '') === $preferredKeyId) ? 0 : 1;
+                $aPref = ($a['id'] === $preferredKeyId) ? 0 : 1;
+                $bPref = ($b['id'] === $preferredKeyId) ? 0 : 1;
                 return $aPref <=> $bPref;
             });
         }
 
         foreach ($candidates as $candidate) {
-            $bytes = $candidate['bytes'] ?? null;
-            if (!$bytes) {
+            $bytes = $candidate['bytes'];
+            if ($bytes === '') {
                 continue;
             }
             try {

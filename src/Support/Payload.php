@@ -5,6 +5,7 @@ namespace BlackCat\Crypto\Support;
 
 final class Payload
 {
+    /** @param array<string,mixed> $meta */
     public function __construct(
         public readonly string $ciphertext,
         public readonly string $nonce,

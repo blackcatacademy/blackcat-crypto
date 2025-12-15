@@ -10,6 +10,7 @@ final class RotationPolicyRegistry
     /** @var array<string,RotationPolicy> */
     private array $policies = [];
 
+    /** @param array<string,array<string,mixed>> $config */
     public static function fromArray(array $config): ?self
     {
         if ($config === []) {

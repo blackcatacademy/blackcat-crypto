@@ -21,6 +21,7 @@ final class KmsListCommand implements CommandInterface
         return 'List configured KMS clients, weights, contexts and suspension state.';
     }
 
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $json = in_array('--json', $args, true);

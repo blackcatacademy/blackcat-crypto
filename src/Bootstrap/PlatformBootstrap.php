@@ -20,12 +20,12 @@ final class PlatformBootstrap
      * @param array{
      *   keys_dir?:string,
      *   manifest?:string,
-     *   logger?:LoggerInterface|null,
+     *   logger?:mixed,
      *   strict?:bool,
      *   init_core?:bool,
      *   init_database?:bool,
      *   db_encryption_map?:string|null,
-     *   db_gateway_factory?:callable|null, // fn(): \BlackCat\Database\Crypto\Gateway\DatabaseGatewayInterface
+     *   db_gateway_factory?:mixed,
      * } $options
      */
     public static function boot(array $options = []): CryptoManager
@@ -51,9 +51,10 @@ final class PlatformBootstrap
         $crypto = CryptoManager::boot(CryptoConfig::fromEnv($env), $logger);
 
         if (($options['init_core'] ?? true) && class_exists('\\BlackCat\\Core\\Security\\Crypto')) {
+            $keysDirArg = is_string($keysDir) && $keysDir !== '' ? $keysDir : null;
             try {
                 /** @phpstan-ignore-next-line optional dependency */
-                \BlackCat\Core\Security\Crypto::initFromKeyManager($keysDir !== '' ? $keysDir : null, $logger);
+                \BlackCat\Core\Security\Crypto::initFromKeyManager($keysDirArg, $logger);
             } catch (\Throwable $e) {
                 if ($strict) {
                     throw $e;
