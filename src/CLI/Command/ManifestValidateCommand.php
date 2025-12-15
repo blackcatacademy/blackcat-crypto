@@ -75,8 +75,6 @@ final class ManifestValidateCommand implements CommandInterface
             $issues[] = 'slots must be a non-empty object/dictionary';
             $slots = [];
         }
-        $seenContexts = [];
-        $contextToSlot = [];
         $allowedTypes = ['aes', 'aead', 'hmac', 'hybrid', 'wrap', 'rsa'];
         foreach ($slots as $slotName => $definition) {
             if (!is_string($slotName) || !preg_match('/^[a-z0-9._-]+$/', $slotName)) {
@@ -91,6 +89,13 @@ final class ManifestValidateCommand implements CommandInterface
                 $issues[] = "slot {$slotName} is missing type";
             } elseif (!in_array($type, $allowedTypes, true)) {
                 $issues[] = "slot {$slotName} has unsupported type '{$type}'";
+            }
+
+            $key = $definition['key'] ?? null;
+            if (!is_string($key) || $key === '') {
+                $issues[] = "slot {$slotName} is missing key";
+            } elseif (!preg_match('/^[A-Za-z0-9._-]+$/', $key)) {
+                $issues[] = "slot {$slotName} key must match /^[A-Za-z0-9._-]+$/";
             }
 
             $length = $definition['length'] ?? null;
@@ -108,73 +113,8 @@ final class ManifestValidateCommand implements CommandInterface
                 }
             }
 
-            $contexts = $definition['contexts'] ?? null;
-            if (!is_array($contexts) || $contexts === []) {
-                $issues[] = "slot {$slotName} must declare contexts";
-            } else {
-                foreach ($contexts as $ctx) {
-                    if (!is_string($ctx) || !preg_match('/^[a-z0-9._-]+$/', $ctx)) {
-                        $issues[] = "slot {$slotName} has invalid context entry (must match /^[a-z0-9._-]+$/)";
-                        continue;
-                    }
-                    $seenContexts[] = $ctx;
-                    $contextToSlot[$ctx] = $slotName;
-                }
-            }
-
-            $kmsWeightTotal = 0;
-            $hasWeight = false;
-            $seenKmsIds = [];
-            if (isset($definition['kms'])) {
-                if (!is_array($definition['kms'])) {
-                    $issues[] = "slot {$slotName} kms must be an array";
-                } else {
-                    if (in_array($type, ['wrap', 'hybrid'], true) && $definition['kms'] === []) {
-                        $issues[] = "slot {$slotName} requires at least one kms entry for type {$type}";
-                    }
-                    foreach ($definition['kms'] as $idx => $kms) {
-                        if (!is_array($kms)) {
-                            $issues[] = "slot {$slotName} kms entry #{$idx} must be an object";
-                            continue;
-                        }
-                        $kmsId = $kms['id'] ?? null;
-                        if (empty($kmsId) || !is_string($kmsId)) {
-                            $issues[] = "slot {$slotName} kms entry #{$idx} missing id";
-                        } elseif (isset($seenKmsIds[$kmsId])) {
-                            $issues[] = "slot {$slotName} kms entry #{$idx} duplicate id '{$kmsId}'";
-                        } else {
-                            $seenKmsIds[$kmsId] = true;
-                        }
-                        $kmsType = $kms['type'] ?? 'http';
-                        if (!in_array($kmsType, ['http', 'hsm', 'local'], true)) {
-                            $issues[] = "slot {$slotName} kms entry #{$idx} type must be http|hsm|local";
-                        }
-                        if (isset($kms['weight'])) {
-                            $hasWeight = true;
-                            if (!is_int($kms['weight']) || $kms['weight'] <= 0) {
-                                $issues[] = "slot {$slotName} kms entry #{$idx} weight must be positive int";
-                            } else {
-                                $kmsWeightTotal += $kms['weight'];
-                            }
-                        }
-                        if (isset($kms['contexts']) && is_array($kms['contexts'])) {
-                            foreach ($kms['contexts'] as $ctx) {
-                                if (!is_string($ctx) || !preg_match('/^[a-z0-9._-]+$/', $ctx)) {
-                                    $issues[] = "slot {$slotName} kms entry #{$idx} has invalid context";
-                                } elseif (!in_array($ctx, $contexts ?? [], true)) {
-                                    $issues[] = "slot {$slotName} kms entry #{$idx} context {$ctx} not in slot contexts";
-                                }
-                            }
-                        } elseif (isset($kms['contexts']) && !is_array($kms['contexts'])) {
-                            $issues[] = "slot {$slotName} kms entry #{$idx} contexts must be an array when present";
-                        }
-                    }
-                    if ($hasWeight && $kmsWeightTotal !== 100) {
-                        $issues[] = "slot {$slotName} kms weights must sum to 100 when provided";
-                    }
-                }
-            } elseif (in_array($type, ['wrap', 'hybrid'], true)) {
-                $issues[] = "slot {$slotName} requires kms configuration for type {$type}";
+            if (isset($definition['options']) && !is_array($definition['options'])) {
+                $issues[] = "slot {$slotName} options must be an object when provided";
             }
         }
 
@@ -184,43 +124,25 @@ final class ManifestValidateCommand implements CommandInterface
             $rotation = [];
         }
         foreach ($rotation as $ctx => $rule) {
+            if (!is_string($ctx) || $ctx === '' || !preg_match('/^[a-z0-9._*-]+$/', $ctx)) {
+                $issues[] = "rotation rule key '{$ctx}' must match /^[a-z0-9._*-]+$/";
+                continue;
+            }
             if (!is_array($rule)) {
                 $issues[] = "rotation rule {$ctx} must be an object";
                 continue;
             }
             $hasAge = isset($rule['maxAgeSeconds']) && is_int($rule['maxAgeSeconds']) && $rule['maxAgeSeconds'] > 0;
-            $hasItems = isset($rule['maxItems']) && is_int($rule['maxItems']) && $rule['maxItems'] > 0;
-            if (!$hasAge && !$hasItems) {
-                $issues[] = "rotation rule {$ctx} should define positive maxAgeSeconds or maxItems";
+            $hasWraps = isset($rule['maxWraps']) && is_int($rule['maxWraps']) && $rule['maxWraps'] > 0;
+            if (!$hasAge && !$hasWraps) {
+                $issues[] = "rotation rule {$ctx} should define positive maxAgeSeconds or maxWraps";
             }
-            if (!in_array($ctx, $seenContexts, true)) {
-                $issues[] = "rotation rule {$ctx} refers to unknown context";
-            }
-        }
 
-        $dupContexts = $this->duplicates($seenContexts);
-        foreach ($dupContexts as $dup) {
-            $issues[] = "context {$dup} is declared in multiple slots";
+            if (!str_contains($ctx, '*') && !array_key_exists($ctx, $slots)) {
+                $issues[] = "rotation rule {$ctx} refers to unknown slot";
+            }
         }
 
         return [count($issues) === 0, $issues];
-    }
-
-    /**
-     * @param list<string> $values
-     * @return list<string>
-     */
-    private function duplicates(array $values): array
-    {
-        $seen = [];
-        $dups = [];
-        foreach ($values as $val) {
-            if (isset($seen[$val])) {
-                $dups[$val] = true;
-            } else {
-                $seen[$val] = true;
-            }
-        }
-        return array_keys($dups);
     }
 }

@@ -1,27 +1,68 @@
-# Blackcat Crypto – Quick Examples
+# BlackCat Crypto – Quick Examples
 
-## Encrypt/Decrypt (PHP)
+## Bootstrap (PHP)
 ```php
-use BlackCat\Crypto\CryptoManager;
-use BlackCat\Crypto\Config\CryptoConfig;
-use Monolog\Logger;
+use BlackCat\Crypto\Bootstrap\PlatformBootstrap;
 
-$config = CryptoConfig::fromEnv();
-$crypto = new CryptoManager($config, new Logger('crypto'));
-
-$ciphertext = $crypto->encrypt('hello', ['context' => 'demo']);
-$plaintext = $crypto->decrypt($ciphertext, ['context' => 'demo']);
+$crypto = PlatformBootstrap::boot(); // uses BLACKCAT_KEYS_DIR + BLACKCAT_CRYPTO_MANIFEST
 ```
 
-## Validate manifest
+## Encrypt/Decrypt (context envelope)
+```php
+$envelope = $crypto->encryptContext('users.pii', 'hello');
+$plaintext = $crypto->decryptContext('users.pii', $envelope->encode());
+```
+
+## Encrypt/Decrypt (local-only payload)
+```php
+$payload = $crypto->encryptLocal('users.pii', 'hello');
+$plaintext = $crypto->decryptLocal('users.pii', $payload);
+```
+
+## HMAC (rotation-safe)
+```php
+// Prefer storing both signature + keyId (DB column *_key_version).
+$out = $crypto->hmacWithKeyId('core.hmac.email', $message);
+$signature = $out['signature']; // 32-byte binary
+$keyId = $out['keyId'];         // e.g. email_hash_key_v3.key
+
+// Later:
+$ok = $crypto->verifyHmacWithKeyId('core.hmac.email', $message, $signature, $keyId);
+
+// If you need to lookup without knowing keyId, compute candidates and query via IN (...):
+$candidates = $crypto->hmacCandidates('core.hmac.email', $message);
+// SELECT ... WHERE email_hmac IN (:sig1, :sig2, ...)
+```
+
+## Validate manifest (JSON)
 ```bash
-BLACKCAT_CRYPTO_CONFIG=./crypto.yaml \
-  php bin/crypto manifest:validate ./manifests/keys.yaml
+MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+php bin/crypto manifest:validate "$MANIFEST"
+php bin/crypto manifest:validate "$MANIFEST" --json
 ```
 
 ## Rotate keys (dry run)
 ```bash
-php bin/crypto key:rotate --manifest ./manifests/keys.yaml --dry-run
+MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+php bin/crypto key:rotate core.crypto.default ./keys --manifest="$MANIFEST" --dry-run
+php bin/crypto key:rotate core.hmac.email ./keys --manifest="$MANIFEST" --format=base64 --dry-run
+```
+
+## Key sources
+
+Filesystem (recommended): `*_vN.key` (raw bytes). Optional: `*_vN.hex`, `*_vN.b64`.
+
+Env vars: `BC_KEY_<KEYNAME>_V<N>` (+ optional encoding hint `_HEX|_B64|_RAW`).
+
+```bash
+# raw bytes file:
+ls keys/crypto_key_v1.key
+
+# hex:
+echo -n "deadbeef..." > keys/crypto_key_v2.hex
+
+# base64 env (auto-detect works for base64 too):
+export BC_KEY_CRYPTO_KEY_V3="$(openssl rand -base64 32)"
 ```
 
 ## Export telemetry

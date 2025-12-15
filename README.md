@@ -40,10 +40,15 @@ blackcat-crypto/
 composer install
 composer test
 
-export BLACKCAT_KMS_ENDPOINTS='[{"id":"local-kms","endpoint":"http://127.0.0.1:8081","token":"local-dev"}]'
+export BLACKCAT_KEYS_DIR=./keys
+export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+
+php bin/crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
+php bin/crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
+
+# optional: KMS + persistent wrap queue
+export BLACKCAT_KMS_ENDPOINTS='[{"id":"local-kms","type":"http","endpoint":"http://127.0.0.1:8081","token":"local-dev"}]'
 export BLACKCAT_CRYPTO_WRAP_QUEUE='file:///var/lib/blackcat/wrap.queue'
-php bin/crypto key:generate --slot=data-aead
-php bin/crypto encrypt --context="users.ssn" --stdin
 php bin/crypto wrap:queue status --limit 5
 ```
 
@@ -93,7 +98,7 @@ V testech používáme `LoopbackKmsClient`, takže lze verifikovat AEAD i double
 
 ```
 php bin/crypto help
-php bin/crypto key:generate users.pii keys/users.pii_v1.key
+php bin/crypto key:rotate core.crypto.default keys/ --manifest=../blackcat-crypto-manifests/contexts/core.json
 php bin/crypto wrap:status storage/envelopes/123.json
 php bin/crypto kms:diag
 php bin/crypto wrap:queue status --limit 10
@@ -110,7 +115,7 @@ php bin/crypto kms:suspend hsm-primary 600
 php bin/crypto kms:resume hsm-primary
 php bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500
 php bin/crypto vault:coverage var/ingress.ndjson --table --top=5
-php bin/crypto manifest:validate contexts/core.json --json
+php bin/crypto manifest:validate ../blackcat-crypto-manifests/contexts/core.json --json
 php bin/crypto key:rotate app.hsm keys/
 # runtime governance API (POST JSON): public/governance.php
 # agregace ze všech repozitářů (viz docs/COVERAGE-WORKFLOW.md)
@@ -137,7 +142,7 @@ Repo `blackcat-crypto-manifests` obsahuje sdílené JSON manifesty (`contexts/*.
 export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
 
 # porovnej manifesty (např. CI)
-php bin/crypto manifest:diff --from=contexts/core.json --to=../env/prod/manifest.json --json
+php bin/crypto manifest:diff --from=../blackcat-crypto-manifests/contexts/core.json --to=../env/prod/manifest.json --json
 ```
 
 `CryptoConfig::fromEnv()` tím automaticky načte všechny sloty/rotace, které pak používají `CryptoManager`, `CoreCryptoBridge` i SDK balíčky (`blackcat-crypto-js`, `blackcat-crypto-rust`). Stačí přidat nový kontext do manifestu a všechny repozitáře jej získají při dalším bootu, žádná duplicita konfigurace.
@@ -169,6 +174,7 @@ Aktuální novinky a seznam změn viz `docs/RELEASE_NOTES.md`.
 ## Další kroky
 
 - detailní ROADMAP v `docs/ROADMAP.md`
+- “copy-paste” integrace pro další repozitáře v `docs/INTEGRATION.md`
 - `blackcat-crypto-kms` poskytuje referenční KMS servery (HTTP daemon `bin/kms-http`) – `HttpKmsClient` na ně umí mluvit s Auth tokenem.
 - `BLACKCAT_CRYPTO_ROTATION` (JSON) umožňuje definovat politiky:\
   `export BLACKCAT_CRYPTO_ROTATION='{"users.*":{"maxAgeSeconds":86400,"maxWraps":3}}'`
