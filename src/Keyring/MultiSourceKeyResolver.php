@@ -82,24 +82,44 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         ]));
 
         $allFiles = glob($dir . '/*.key') ?: [];
-        sort($allFiles, SORT_STRING);
 
-        $matched = [];
+        $versioned = [];
         foreach ($allFiles as $file) {
-            $base = strtolower(basename($file));
+            $base = basename($file);
             foreach ($variants as $variant) {
-                if ($variant !== '' && str_contains($base, $variant)) {
-                    $matched[] = $file;
+                if ($variant === '') {
+                    continue;
+                }
+                $pattern = '~^' . preg_quote($variant, '~') . '_v(?P<ver>\\d+)\\.key$~i';
+                if (preg_match($pattern, $base, $m)) {
+                    $versioned[] = [
+                        'version' => (int)$m['ver'],
+                        'file' => $file,
+                    ];
                     continue 2;
                 }
             }
         }
 
-        // Fallback: if nothing matched, take everything (deterministic order).
-        $targets = $matched === [] ? $allFiles : $matched;
+        if ($versioned === [] && count($allFiles) === 1) {
+            $only = (string)$allFiles[0];
+            if (preg_match('~_v(?P<ver>\\d+)\\.key$~i', basename($only), $m)) {
+                $versioned[] = [
+                    'version' => (int)$m['ver'],
+                    'file' => $only,
+                ];
+            }
+        }
+
+        usort(
+            $versioned,
+            static fn(array $a, array $b) => ($a['version'] <=> $b['version'])
+                ?: strcmp((string)$a['file'], (string)$b['file'])
+        );
 
         $result = [];
-        foreach ($targets as $file) {
+        foreach ($versioned as $entry) {
+            $file = (string)$entry['file'];
             $bytes = @file_get_contents($file);
             if ($bytes === false) {
                 continue;

@@ -40,4 +40,25 @@ final class CryptoManagerTest extends TestCase
         $plain = $manager->decryptContext('users.pii', $serialized);
         self::assertSame('secret-data', $plain);
     }
+
+    public function testHmacWithKeyIdExposesSigningKey(): void
+    {
+        $slot = KeySlot::default('core.hmac.email');
+        $resolver = new InMemoryKeyResolver([
+            $slot->name() => [new KeyMaterial('k1', random_bytes(64), $slot->name())],
+        ]);
+        $registry = new KeyRegistry($resolver);
+
+        $manager = CryptoManager::fromComponents(
+            $registry,
+            new XChaCha20Cipher(),
+            new HmacService($registry),
+            new KmsRouter([])
+        );
+
+        $out = $manager->hmacWithKeyId('core.hmac.email', 'hello');
+        self::assertSame('k1', $out['keyId']);
+        self::assertSame(32, strlen($out['signature']));
+        self::assertSame($out['signature'], $manager->hmac('core.hmac.email', 'hello'));
+    }
 }

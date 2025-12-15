@@ -60,13 +60,15 @@ final class KeyRotateCommand implements CommandInterface
             return 1;
         }
 
-        $version = $requestedVersion ?? $this->nextVersion($dir, $slot);
+        $keyBasename = $this->deriveKeyBasename($slot, $manifestPath);
+        $version = $requestedVersion ?? $this->nextVersion($dir, $keyBasename);
         $bytes = random_bytes($length);
         [$content, $ext] = $this->formatKey($bytes, $format);
-        $file = $this->buildFilename($dir, $slot, $version, $ext);
+        $file = $this->buildFilename($dir, $keyBasename, $version, $ext);
 
         $meta = [
             'slot' => $slot,
+            'key' => $keyBasename,
             'version' => $version,
             'format' => $format,
             'length' => $length,
@@ -126,12 +128,10 @@ final class KeyRotateCommand implements CommandInterface
         return [$options, $positionals];
     }
 
-    private function buildFilename(string $dir, string $slot, int $version, string $ext = 'key'): string
+    private function buildFilename(string $dir, string $keyBasename, int $version, string $ext = 'key'): string
     {
-        $safeSlot = preg_replace('~[^A-Za-z0-9_.-]+~', '_', $slot) ?: 'slot';
-        $timestamp = date('Ymd_His');
-        $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
-        return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . "{$safeSlot}_v{$version}_{$timestamp}_{$suffix}.{$ext}";
+        $safeKey = preg_replace('~[^A-Za-z0-9_.-]+~', '_', $keyBasename) ?: 'key';
+        return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . "{$safeKey}_v{$version}.{$ext}";
     }
 
     /**
@@ -166,19 +166,35 @@ final class KeyRotateCommand implements CommandInterface
         return 32;
     }
 
-    private function nextVersion(string $dir, string $slot): int
+    private function nextVersion(string $dir, string $keyBasename): int
     {
         if (!is_dir($dir)) {
             return 1;
         }
-        $safeSlot = preg_replace('~[^A-Za-z0-9_.-]+~', '_', $slot) ?: $slot;
-        $pattern = rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $safeSlot . '_v*.*';
+        $safeKey = preg_replace('~[^A-Za-z0-9_.-]+~', '_', $keyBasename) ?: $keyBasename;
+        $pattern = rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $safeKey . '_v*.*';
         $max = 0;
         foreach (glob($pattern) ?: [] as $file) {
-            if (preg_match('~_v(\d+)_~', basename($file), $m)) {
-                $max = max($max, (int)$m[1]);
+            $base = basename($file);
+            $re = '~^' . preg_quote($safeKey, '~') . '_v(?P<ver>\\d+)(?:_.*)?\\.(key|hex|b64)$~i';
+            if (preg_match($re, $base, $m)) {
+                $max = max($max, (int)$m['ver']);
             }
         }
         return $max + 1;
+    }
+
+    private function deriveKeyBasename(string $slot, ?string $manifestPath): string
+    {
+        $base = $slot;
+        if ($manifestPath && is_file($manifestPath)) {
+            $manifest = json_decode((string)file_get_contents($manifestPath), true);
+            $slotDef = $manifest['slots'][$slot] ?? null;
+            if (is_array($slotDef) && isset($slotDef['key']) && is_string($slotDef['key']) && $slotDef['key'] !== '') {
+                $base = $slotDef['key'];
+            }
+        }
+
+        return preg_replace('~[^A-Za-z0-9_.-]+~', '_', $base) ?: 'key';
     }
 }

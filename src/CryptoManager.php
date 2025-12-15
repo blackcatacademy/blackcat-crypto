@@ -245,14 +245,25 @@ final class CryptoManager
         return null;
     }
 
-    public function hmac(string $slot, string $message): string
+    /**
+     * HMAC signature + key id used for signing (useful for DB key_version columns).
+     *
+     * @return array{signature:string, keyId:string}
+     */
+    public function hmacWithKeyId(string $slot, string $message): array
     {
-        $sig = $this->hmac->sign($slot, $message);
+        $out = $this->hmac->signWithKeyId($slot, $message);
         $this->recordIntent('hmac', [
             'slot' => $slot,
             'messageBytes' => strlen($message),
+            'keyId' => $out['keyId'],
         ]);
-        return $sig;
+        return $out;
+    }
+
+    public function hmac(string $slot, string $message): string
+    {
+        return $this->hmacWithKeyId($slot, $message)['signature'];
     }
 
     public function verifyHmac(string $slot, string $message, string $signature): bool

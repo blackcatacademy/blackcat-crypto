@@ -53,7 +53,9 @@ Repo je nyní na Stage 9.
 - Vault CLI trio `vault:diag`/`vault:report`/`vault:decrypt` pokrývá auditní scénáře (metadata coverage vs manifest, fail-on-warn, plaintext export).
 - `vault:migrate` slouží k postupné migraci legacy `.enc` → double-envelope + wrap queue follow-up.
 - Cross-repo policy mesh: manifesty (`blackcat-crypto-manifests`) sdílí kontexty pro `blackcat-core`, `blackcat-crypto`, `blackcat-crypto-js` i DB adapter.
-- `blackcat-database-crypto` Stage 1 zakončena (transparentní šifrování při insert/update).
+- `blackcat-database-crypto` Stage 1 zakončena (transparentní šifrování insert/update, `decrypt()` helper, integrační testy s `blackcat-database`).
+- `PlatformBootstrap::boot()` – 1-line bootstrap pro ostatní repozitáře (boot `CryptoManager` + core bridge + DB ingress).
+- Standardizace klíčů: pouze `*_vN.key` (bez fallbacků na neversonované názvy).
 
 ## Stage 11 – Data Plane Fusion (in progress)
 - Transparentní hooky v `blackcat-database` repositories (registrace encryption mapy, linting + telemetry).

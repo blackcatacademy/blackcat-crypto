@@ -4,8 +4,6 @@ includes:
 parameters:
     paths:
         - src
-    level: 6
-    checkGenericClassInNonGenericObjectType: false
-    memoryLimit: 512M
+    level: 8
     tmpDir: var/phpstan
     reportUnmatchedIgnoredErrors: false

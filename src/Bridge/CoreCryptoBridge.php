@@ -32,6 +32,8 @@ final class CoreCryptoBridge
         'context_prefix' => self::DEFAULT_PREFIX,
         'wrap_queue' => 'memory',
     ];
+    /** @var array<string,mixed> */
+    private static array $envOverrides = [];
 
     /**
      * Nastav konfiguraci bridge (např. umístění klíčů, logger, KMS endpoints).
@@ -42,6 +44,7 @@ final class CoreCryptoBridge
     public static function configure(array $options): void
     {
         self::$options = array_replace(self::$options, $options);
+        self::$envOverrides = array_replace(self::$envOverrides, $options);
         self::$manager = null;
     }
 
@@ -164,7 +167,8 @@ final class CoreCryptoBridge
     {
         if (self::$manager === null) {
             self::validateOptions(self::$options);
-            $config = CryptoConfig::fromEnv(self::buildEnv());
+            $baseEnv = array_merge((array)getenv(), $_ENV, $_SERVER);
+            $config = CryptoConfig::fromEnv(array_replace($baseEnv, self::buildEnv()));
             $logger = self::$options['logger'] ?? null;
             if ($logger !== null && !$logger instanceof LoggerInterface) {
                 throw new \InvalidArgumentException('logger must implement LoggerInterface');
@@ -223,12 +227,23 @@ final class CoreCryptoBridge
     {
         $env = [
             'BLACKCAT_KEYS_DIR' => (string)(self::$options['keys_dir'] ?? ''),
-            'BLACKCAT_KMS_ENDPOINTS' => json_encode(self::$options['kms'] ?? []),
-            'BLACKCAT_CRYPTO_ROTATION' => json_encode(self::$options['rotation'] ?? []),
-            'BLACKCAT_CRYPTO_AEAD' => (string)(self::$options['aead'] ?? 'xchacha'),
-            'BLACKCAT_CRYPTO_WRAP_QUEUE' => (string)(self::$options['wrap_queue'] ?? ''),
-            'BLACKCAT_CRYPTO_MANIFEST' => (string)(self::$options['manifest'] ?? ''),
         ];
+
+        if (array_key_exists('kms', self::$envOverrides)) {
+            $env['BLACKCAT_KMS_ENDPOINTS'] = json_encode(self::$options['kms'] ?? []);
+        }
+        if (array_key_exists('rotation', self::$envOverrides)) {
+            $env['BLACKCAT_CRYPTO_ROTATION'] = json_encode(self::$options['rotation'] ?? []);
+        }
+        if (array_key_exists('aead', self::$envOverrides)) {
+            $env['BLACKCAT_CRYPTO_AEAD'] = (string)(self::$options['aead'] ?? 'xchacha');
+        }
+        if (array_key_exists('wrap_queue', self::$envOverrides)) {
+            $env['BLACKCAT_CRYPTO_WRAP_QUEUE'] = (string)(self::$options['wrap_queue'] ?? '');
+        }
+        if (array_key_exists('manifest', self::$envOverrides)) {
+            $env['BLACKCAT_CRYPTO_MANIFEST'] = (string)(self::$options['manifest'] ?? '');
+        }
 
         return $env;
     }

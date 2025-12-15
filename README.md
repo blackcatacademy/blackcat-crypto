@@ -50,13 +50,12 @@ php bin/crypto wrap:queue status --limit 5
 Knihovnu pak použiješ v jiném repu:
 
 ```php
-use BlackCat\Crypto\CryptoManager;
-use BlackCat\Crypto\Config\CryptoConfig;
+use BlackCat\Crypto\Bootstrap\PlatformBootstrap;
 use BlackCat\Crypto\Queue\InMemoryWrapQueue;
 use BlackCat\Crypto\Queue\RotationCoordinator;
 
 $queue = new InMemoryWrapQueue();
-$crypto = CryptoManager::boot(CryptoConfig::fromEnv())->withWrapQueue($queue);
+$crypto = PlatformBootstrap::boot()->withWrapQueue($queue);
 $envelope = $crypto->encryptContext('users.pii', $plaintext);  // double-wrapped
 store_in_db($envelope->encode());
 $plain = $crypto->decryptContext('users.pii', $envelope->encode());
@@ -68,6 +67,19 @@ $rotation = new RotationCoordinator($crypto, $queue, function (string $context, 
 $rotation->schedule($envelope);
 $rotation->process();
 ```
+
+### DB šifrování (blackcat-database)
+
+Pokud používáš `blackcat-database`, stačí nastavit mapu a klíče – write‑path šifrování/HMAC proběhne automaticky přes `blackcat-database-crypto` ingress:
+
+```bash
+export BLACKCAT_DB_ENCRYPTION_MAP=./config/encryption.json
+export BLACKCAT_DB_ENCRYPTION_REQUIRED=1   # fail-closed (doporučeno)
+export BLACKCAT_KEYS_DIR=./keys
+export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+```
+
+V aplikaci pak typicky jen zavoláš `PlatformBootstrap::boot()` a používáš repos/services z `blackcat-database` (bez ručního volání encrypt/decrypt).
 
 ### Testy
 
