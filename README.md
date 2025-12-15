@@ -1,3 +1,5 @@
+![BlackCat Crypto](.github/blackcat-crypto-banner.png)
+
 # BlackCat Crypto
 
 Modulární šifrovací engine poskytující jednotné rozhraní pro veškerou práci s citlivými daty v ekosystému BlackCat. Cílem je, aby ostatní repozitáře (database, sync, auth…) nikdy nemusely řešit klíče, HMAC ani interakce s KMS – vše probíhá přes zdejší `CryptoManager`.
