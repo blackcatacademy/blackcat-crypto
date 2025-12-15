@@ -10,7 +10,7 @@ final class KeyGenerateCommand implements CommandInterface
     public function __construct(private readonly LoggerInterface $logger) {}
 
     public function name(): string { return 'key:generate'; }
-    public function description(): string { return 'Generate a random key for a given slot.'; }
+    public function description(): string { return '[DEPRECATED] Alias for key:rotate (use key:rotate).'; }
 
     public function run(array $args): int
     {
@@ -18,17 +18,14 @@ final class KeyGenerateCommand implements CommandInterface
         $output = $args[1] ?? null;
         if (!$slot || !$output) {
             fwrite(STDERR, "Usage: key:generate <slot> <output-file>\n");
+            fwrite(STDERR, "Deprecated: use key:rotate <slot> <dir> [--manifest=...] [--format=...] [--length=...]\n");
             return 1;
         }
-        $bytes = random_bytes(32);
-        if (file_put_contents($output, $bytes) === false) {
-            $this->logger->error('key-generate-failed', ['slot' => $slot, 'output' => $output]);
-            fwrite(STDERR, "Failed to write key file\n");
-            return 1;
-        }
-        chmod($output, 0600);
-        $this->logger->info('key-generated', ['slot' => $slot, 'output' => $output]);
-        echo sprintf("Generated key for %s at %s\n", $slot, $output);
-        return 0;
+
+        // Keep legacy behavior (only key file, no meta) but use the modern key:rotate
+        // implementation so manifest length + vN naming are respected.
+        fwrite(STDERR, "DEPRECATED: key:generate is an alias for key:rotate. Use key:rotate instead.\n");
+        $rotateArgs = array_merge([$slot, $output, '--no-meta'], array_slice($args, 2));
+        return (new KeyRotateCommand($this->logger))->run($rotateArgs);
     }
 }

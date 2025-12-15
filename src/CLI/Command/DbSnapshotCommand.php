@@ -1,13 +1,11 @@
 <?php
-
 declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
-use BlackCat\Crypto\Bridge\CoreCryptoBridge;
 use BlackCat\Crypto\Config\CryptoConfig;
-use BlackCat\Crypto\Hooks\DatabaseCryptoHooks;
-use BlackCat\Crypto\Intent\IntentCollector;
+use BlackCat\Crypto\Bridge\DatabaseCryptoHooks;
+use BlackCat\Crypto\Telemetry\IntentCollector;
 use BlackCat\Crypto\Kms\KmsRouter;
 use BlackCat\Crypto\Telemetry\TelemetryExporter;
 use Psr\Log\NullLogger;
@@ -15,7 +13,7 @@ use Psr\Log\NullLogger;
 /**
  * Emit DB crypto hook telemetry snapshot for db-crypto CI (JSON/Prom/Otel).
  */
-class DbSnapshotCommand implements CommandInterface
+final class DbSnapshotCommand implements CommandInterface
 {
     public function name(): string
     {
@@ -27,9 +25,7 @@ class DbSnapshotCommand implements CommandInterface
         return 'Emit DB crypto hook telemetry snapshot (json|prom|otel) for db-crypto CI.';
     }
 
-    /**
-    * @param list<string> $args
-    */
+    /** @param list<string> $args */
     public function run(array $args): int
     {
         $format = $this->parseArg($args, ['--format'], default: 'json');
@@ -48,7 +44,7 @@ class DbSnapshotCommand implements CommandInterface
         $queue = $queueFactory ? $queueFactory() : null;
 
         $collector = IntentCollector::global() ?? new IntentCollector();
-        $hooks = new DatabaseCryptoHooks($collector, new CoreCryptoBridge($config));
+        $hooks = new DatabaseCryptoHooks($collector);
 
         $snapshot = $hooks->telemetrySnapshot($kmsHealth, $queue, $collector);
 

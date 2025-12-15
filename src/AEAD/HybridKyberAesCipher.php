@@ -9,7 +9,7 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Placeholder hybrid cipher combining random Kyber-like key encapsulation with AES-GCM-SIV fallback.
- * Slouží jako post-quantum ready hook – v produkci se nahradí reálnou implementací.
+ * Acts as a post-quantum-ready hook; production deployments should replace it with a real implementation.
  */
 final class HybridKyberAesCipher implements AeadCipherInterface
 {

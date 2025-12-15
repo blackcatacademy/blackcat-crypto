@@ -48,6 +48,15 @@ php bin/crypto key:rotate core.crypto.default ./keys --manifest="$MANIFEST" --dr
 php bin/crypto key:rotate core.hmac.email ./keys --manifest="$MANIFEST" --format=base64 --dry-run
 ```
 
+## Lint keys (CI gate)
+```bash
+MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+KEYS_DIR=./keys
+
+php bin/crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR"
+php bin/crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR" --json
+```
+
 ## Key sources
 
 Filesystem (recommended): `*_vN.key` (raw bytes). Optional: `*_vN.hex`, `*_vN.b64`.
@@ -72,10 +81,7 @@ export BC_KEY_CRYPTO_KEY_V3="$(openssl rand -base64 32)"
 
 ## Intent telemetry
 ```bash
-# enable intents in your bootstrap
-BlackCat\Crypto\Telemetry\IntentCollector::global(new IntentCollector());
-
-# then export
+export BLACKCAT_CRYPTO_INTENTS=1
 php bin/crypto telemetry:intents --format=otel --limit 10
 ```
 
@@ -125,11 +131,13 @@ $inbox->approve($id, ['approver' => 'alice@example.com']);
 
 ## Wrap queue
 ```bash
-# enqueue wrap jobs from manifest
-php bin/crypto wrap:queue --manifest ./manifests/keys.yaml
+export BLACKCAT_CRYPTO_WRAP_QUEUE='file:///tmp/blackcat-wrap.queue'
 
 # check status/backlog
-php bin/crypto wrap:status
+php bin/crypto wrap:queue status --limit 25
+
+# process jobs (writes updated envelopes to STDOUT or to --dump-dir)
+php bin/crypto wrap:queue run --limit 50 --dump-dir=./rewrap-out
 ```
 
 ## CI-aware telemetry
@@ -141,9 +149,9 @@ GITHUB_ACTIONS=true GITHUB_RUN_ID=12345 \
 
 ## DB crypto snapshots (for db-crypto CI)
 ```bash
-DB_CRYPTO_SNAPSHOT_PATH=./artifacts/db-crypto.json ./bin/crypto db:snapshot --format json
-./bin/crypto db:snapshot prom > ./artifacts/db-crypto.prom
-./bin/crypto db:snapshot --format otel --output ./artifacts/db-crypto-otel.json
+DB_CRYPTO_SNAPSHOT_PATH=./artifacts/db-crypto.json php bin/crypto db:snapshot --format json
+php bin/crypto db:snapshot prom > ./artifacts/db-crypto.prom
+php bin/crypto db:snapshot --format otel --output ./artifacts/db-crypto-otel.json
 ```
 
 ## KMS client config (HTTP)

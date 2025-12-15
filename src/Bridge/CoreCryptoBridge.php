@@ -10,10 +10,8 @@ use BlackCat\Crypto\Keyring\KeyMaterial;
 use Psr\Log\LoggerInterface;
 
 /**
- * Bridge pro napojení legacy `blackcat-core` tříd (Crypto/FileVault) na novou
- * infrastrukturu `blackcat-crypto`. Stará API tak mohou používat stejné klíče,
- * AEAD a HMAC sloty jako zbytek platformy, aniž by bylo nutné držet dvě různé
- * implementace šifrování.
+ * Bridge for wiring legacy `blackcat-core` classes (Crypto/FileVault) to the new `blackcat-crypto`
+ * implementation so the ecosystem uses one set of slots, keys and formats.
  */
 final class CoreCryptoBridge
 {
@@ -36,10 +34,11 @@ final class CoreCryptoBridge
     private static array $envOverrides = [];
 
     /**
-     * Nastav konfiguraci bridge (např. umístění klíčů, logger, KMS endpoints).
-     * Volání je idempotentní — při nové konfiguraci dojde k reinitu managera.
+     * Configure the bridge (keys dir, logger, KMS endpoints, ...).
      *
-     * {@see Crypto::initFromKeyManager()} musí předat alespoň `keys_dir`.
+     * This call is idempotent: changing options resets the cached manager.
+     *
+     * Callers should provide `keys_dir` (or set it via env).
      */
     public static function configure(array $options): void
     {
@@ -223,7 +222,7 @@ final class CoreCryptoBridge
     }
 
     /**
-     * Připrav env pole pro CryptoConfig::fromEnv.
+     * Build an env array for {@see CryptoConfig::fromEnv()}.
      *
      * @return array<string,string>
      */

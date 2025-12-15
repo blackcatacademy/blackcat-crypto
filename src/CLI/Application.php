@@ -20,6 +20,7 @@ use BlackCat\Crypto\CLI\Command\VaultReportCommand;
 use BlackCat\Crypto\CLI\Command\VaultCoverageCommand;
 use BlackCat\Crypto\CLI\Command\KeyRotateCommand;
 use BlackCat\Crypto\CLI\Command\ManifestValidateCommand;
+use BlackCat\Crypto\CLI\Command\KeysLintCommand;
 use BlackCat\Crypto\CLI\Command\KmsSuspendCommand;
 use BlackCat\Crypto\CLI\Command\KmsResumeCommand;
 use BlackCat\Crypto\CLI\Command\KmsListCommand;
@@ -46,6 +47,7 @@ final class Application
         $this->register(new ManifestShowCommand());
         $this->register(new ManifestDiffCommand());
         $this->register(new ManifestValidateCommand());
+        $this->register(new KeysLintCommand());
         $this->register(new KeyRotateCommand($logger));
         $this->register(new KmsSuspendCommand($logger));
         $this->register(new KmsResumeCommand($logger));

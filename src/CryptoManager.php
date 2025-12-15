@@ -18,10 +18,10 @@ use BlackCat\Crypto\Telemetry\IntentCollector;
 use Psr\Log\LoggerInterface;
 
 /**
- * Facade pro veškerou kryptografii v BlackCat.
- * - AEAD šifrování s lokálními klíči a HMAC sloty
- * - Double-envelope (lokální AEAD + KMS wrap)
- * - Jednotný vstup pro další repozitáře
+ * Facade for all cryptography in BlackCat:
+ * - AEAD encryption with local keys + HMAC slots
+ * - Double-envelope (local AEAD + KMS wrap)
+ * - Single entrypoint for other repositories/modules
  */
 final class CryptoManager
 {
@@ -104,8 +104,9 @@ final class CryptoManager
     }
 
     /**
-     * Encrypt plaintext for a logical context (např. `users.pii`).
-     * Vrátí `Envelope`, které obsahuje metadata (KMS host, lokální slot, verze…).
+     * Encrypt plaintext for a logical context (e.g. `users.pii`).
+     *
+     * Returns an {@see Envelope} which includes metadata (KMS client, local key id, wrap count, ...).
      */
     public function encryptContext(string $context, string $plaintext, array $options = []): Envelope
     {
@@ -120,7 +121,7 @@ final class CryptoManager
             ['preferredClient' => $options['preferredClient'] ?? null]
         );
 
-        // Pokud používáme reálný KMS, zvyšte wrap count; lokální metadata pouze zachovají předané číslo.
+        // If a real KMS was used, increment wrap count; local-only metadata keeps the provided value.
         if (($wrapped['client'] ?? 'local') !== 'local') {
             $wrapCount++;
         }
@@ -138,7 +139,7 @@ final class CryptoManager
     }
 
     /**
-     * Decrypt envelope – využívá metadata pro výběr správného lokálního klíče i KMS unwrap.
+     * Decrypt envelope using metadata to pick the correct KMS client and local key id.
      *
      * @param array{skipRotation?:bool} $options
      */
@@ -161,7 +162,7 @@ final class CryptoManager
     }
 
     /**
-     * Convenience pro jednorázové šifrování bez KMS (např. ephemeral secrets).
+     * Convenience helper for local-only encryption without KMS (e.g. ephemeral secrets).
      */
     public function encryptLocal(string $slot, string $plaintext): Payload
     {
@@ -346,7 +347,7 @@ final class CryptoManager
         try {
             $collector->record($intent, $payload);
         } catch (\Throwable) {
-            // Telemetry nesmí zlomit kryptografii.
+            // Telemetry hooks must never break crypto flows.
         }
     }
 }

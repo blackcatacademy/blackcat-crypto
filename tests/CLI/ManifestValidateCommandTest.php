@@ -42,19 +42,19 @@ final class ManifestValidateCommandTest extends TestCase
         $path = $this->tmp . '/good.json';
         $manifest = [
             'slots' => [
-                'primary' => [
-                    'type' => 'aes',
+                'core.crypto.default' => [
+                    'type' => 'aead',
+                    'key' => 'crypto_key',
                     'length' => 32,
-                    'contexts' => ['pii', 'tokens'],
                 ],
-                'secondary' => [
-                    'type' => 'aes',
-                    'length' => 32,
-                    'contexts' => ['logs'],
+                'core.hmac.email' => [
+                    'type' => 'hmac',
+                    'key' => 'email_hash_key',
+                    'length' => 64,
                 ],
             ],
             'rotation' => [
-                'pii' => ['maxAgeSeconds' => 3600],
+                'core.crypto.default' => ['maxAgeSeconds' => 3600],
             ],
         ];
         file_put_contents($path, json_encode($manifest));

@@ -21,3 +21,7 @@
 - Enable intent collector: `BLACKCAT_CRYPTO_INTENTS=1 ./bin/crypto telemetry:intents --format=prom`.
 - Governance check: `./bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500`.
 - Inspect intent archive/recents: `./bin/crypto telemetry:intents --limit=20`.
+
+### DX / CI improvements
+- Added `keys:lint` CLI (manifest + keys dir validation) suitable as a CI gate for other repos.
+- `key:generate` is deprecated (alias for `key:rotate`) to enforce versioned key naming and manifest-driven lengths.

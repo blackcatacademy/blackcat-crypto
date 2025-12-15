@@ -1,6 +1,19 @@
 {
     "name": "blackcat/crypto",
-    "description": "Centralized cryptography services for BlackCat platform (AEAD, HMAC, KMS wrapping, rotations)",
+    "description": "Centralized cryptography services for the BlackCat ecosystem (AEAD, HMAC, KMS wrapping, key rotations)",
+    "keywords": [
+        "blackcat",
+        "cryptography",
+        "security",
+        "encryption",
+        "aead",
+        "xchacha20-poly1305",
+        "hmac",
+        "kms",
+        "key-rotation",
+        "libsodium"
+    ],
+    "homepage": "https://github.com/blackcatacademy/blackcat-crypto",
     "type": "library",
     "license": "proprietary",
     "require": {

@@ -26,6 +26,9 @@ php vendor/bin/crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
 php vendor/bin/crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
 php vendor/bin/crypto key:rotate core.vault "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
 php vendor/bin/crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
+
+# CI gate (recommended)
+php vendor/bin/crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
 ```
 
 3) Boot crypto in your application:
@@ -45,6 +48,7 @@ $crypto = PlatformBootstrap::boot();
 Notes:
 - Key IDs are canonicalized to `<keyname>_vN.key` regardless of source/extension (safe to store as `*_key_version`).
 - Key material is length-validated against the slot `length` from the manifest.
+- `key:generate` is deprecated; use `key:rotate`.
 
 ## Using AEAD
 

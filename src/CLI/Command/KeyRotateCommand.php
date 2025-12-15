@@ -23,7 +23,7 @@ final class KeyRotateCommand implements CommandInterface
     {
         [$options, $positionals] = $this->parseArgs($args);
         $slot = $positionals[0] ?? null;
-        $dir = $positionals[1] ?? null;
+        $target = $positionals[1] ?? null;
         $format = strtolower((string)($options['format'] ?? 'raw'));
         $manifestPath = $options['manifest'] ?? getenv('BLACKCAT_CRYPTO_MANIFEST') ?: null;
         $requestedVersion = isset($options['version']) && is_numeric($options['version']) ? (int)$options['version'] : null;
@@ -31,6 +31,27 @@ final class KeyRotateCommand implements CommandInterface
         $jsonOut = array_key_exists('json', $options);
         $writeMeta = !array_key_exists('no-meta', $options);
         $length = $this->deriveLength($options, $manifestPath, $slot);
+
+        $outputPath = null;
+        $dir = $target;
+        if (is_string($target)) {
+            $base = basename($target);
+            $ext = strtolower((string)pathinfo($base, PATHINFO_EXTENSION));
+            if (in_array($ext, ['key', 'hex', 'b64'], true) && !is_dir($target)) {
+                $outputPath = $target;
+                $dir = dirname($target);
+                if (!array_key_exists('format', $options)) {
+                    $format = match ($ext) {
+                        'hex' => 'hex',
+                        'b64' => 'base64',
+                        default => 'raw',
+                    };
+                }
+                if ($requestedVersion === null && preg_match('~_v(?P<ver>\\d+)\\.(key|hex|b64)$~i', $base, $m)) {
+                    $requestedVersion = (int)$m['ver'];
+                }
+            }
+        }
 
         if ($manifestPath && $slot && is_file($manifestPath)) {
             $manifest = json_decode((string)file_get_contents($manifestPath), true);
@@ -46,7 +67,7 @@ final class KeyRotateCommand implements CommandInterface
         }
 
         if ($slot === null || $dir === null) {
-            fwrite(STDERR, "Usage: key:rotate <slot> <dir> [--length=32] [--format=raw|hex|base64] [--manifest=path] [--version=N] [--dry-run] [--json] [--no-meta]\n");
+            fwrite(STDERR, "Usage: key:rotate <slot> <dir|output-file> [--length=32] [--format=raw|hex|base64] [--manifest=path] [--version=N] [--dry-run] [--json] [--no-meta]\n");
             return 1;
         }
 
@@ -65,6 +86,10 @@ final class KeyRotateCommand implements CommandInterface
         $bytes = random_bytes($length);
         [$content, $ext] = $this->formatKey($bytes, $format);
         $file = $this->buildFilename($dir, $keyBasename, $version, $ext);
+
+        if ($outputPath !== null && $outputPath !== $file && !$jsonOut) {
+            fwrite(STDERR, "Note: output filename is normalized to the standard vN naming; writing {$file}\n");
+        }
 
         $meta = [
             'slot' => $slot,
