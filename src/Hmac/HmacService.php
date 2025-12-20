@@ -75,18 +75,20 @@ final class HmacService
             try {
                 $key = $this->registry->deriveAeadKey($slot, $keyId);
                 $calc = hash_hmac('sha256', $message, $key->bytes, true);
-                return hash_equals($calc, $signature);
+                if (hash_equals($calc, $signature)) {
+                    return true;
+                }
             } catch (\Throwable $e) {
                 $this->logger?->debug('hmac verifyWithKeyId failed', [
                     'slot' => $slot,
                     'keyId' => $keyId,
                     'error' => $e->getMessage(),
                 ]);
-                return false;
             }
         }
 
-        foreach ($this->candidates($slot, $message) as $cand) {
+        // Fallback: try all available key versions (rotation-safe).
+        foreach ($this->candidates($slot, $message, null) as $cand) {
             if (hash_equals($cand['signature'], $signature)) {
                 return true;
             }

@@ -95,6 +95,24 @@ final class MultiSourceKeyResolverTest extends TestCase
         self::assertSame($bytes, $mat->bytes);
     }
 
+    public function testDoesNotFallBackToUnrelatedSingleKeyFile(): void
+    {
+        $slot = KeySlot::fromArray('users.pii', [
+            'type' => 'aead',
+            'key' => 'crypto_key',
+            'length' => 32,
+        ]);
+
+        file_put_contents($this->tmpDir . '/unrelated_key_v1.key', random_bytes(32));
+
+        $resolver = new MultiSourceKeyResolver([
+            ['type' => 'filesystem', 'path' => $this->tmpDir],
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $resolver->resolve($slot);
+    }
+
     private function setEnv(string $key, string $value): void
     {
         putenv($key . '=' . $value);
@@ -102,4 +120,3 @@ final class MultiSourceKeyResolverTest extends TestCase
         $_SERVER[$key] = $value;
     }
 }
-

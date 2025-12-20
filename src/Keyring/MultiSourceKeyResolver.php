@@ -161,17 +161,6 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
             }
         }
 
-        if ($versioned === [] && count($allFiles) === 1) {
-            $only = (string)$allFiles[0];
-            if (preg_match('~_v(?P<ver>\\d+)\\.(?P<ext>key|hex|b64)$~i', basename($only), $m)) {
-                $versioned[] = [
-                    'version' => (int)$m['ver'],
-                    'ext' => strtolower((string)$m['ext']),
-                    'file' => $only,
-                ];
-            }
-        }
-
         usort(
             $versioned,
             static function (array $a, array $b): int {

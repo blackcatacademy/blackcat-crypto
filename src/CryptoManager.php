@@ -149,18 +149,60 @@ final class CryptoManager
     {
         $envelope = Envelope::decode($serializedEnvelope);
         $wrapped = $this->kms->unwrap($context, $envelope->kmsMetadata);
-        $localKey = $this->keyRegistry->deriveAeadKey($context, $envelope->local->keyId);
-        $plaintext = $this->aead->decrypt($wrapped, $context, $localKey);
-        if (!($options['skipRotation'] ?? false)) {
-            $this->maybeScheduleRotation($envelope);
+
+        $hintKeyId = $envelope->local->keyId;
+        $tried = [];
+        $lastError = null;
+
+        try {
+            $localKey = $this->keyRegistry->deriveAeadKey($context, $hintKeyId);
+            $tried[$localKey->id] = true;
+            $plaintext = $this->aead->decrypt($wrapped, $context, $localKey);
+            if (!($options['skipRotation'] ?? false)) {
+                $this->maybeScheduleRotation($envelope);
+            }
+            $this->recordIntent('decrypt_context', [
+                'context' => $context,
+                'localKeyId' => $localKey->id,
+                'kmsClient' => $envelope->kmsMetadata['client'] ?? null,
+                'wrapCount' => $envelope->kmsMetadata['wrapCount'] ?? null,
+            ]);
+            return $plaintext;
+        } catch (\Throwable $e) {
+            $lastError = $e;
         }
-        $this->recordIntent('decrypt_context', [
-            'context' => $context,
-            'localKeyId' => $envelope->local->keyId,
-            'kmsClient' => $envelope->kmsMetadata['client'] ?? null,
-            'wrapCount' => $envelope->kmsMetadata['wrapCount'] ?? null,
-        ]);
-        return $plaintext;
+
+        // Fallback: try all available key versions (rotation-safe).
+        try {
+            foreach ($this->keyRegistry->all($context) as $candidate) {
+                if (isset($tried[$candidate->id])) {
+                    continue;
+                }
+                $tried[$candidate->id] = true;
+                try {
+                    $plaintext = $this->aead->decrypt($wrapped, $context, $candidate);
+                    if (!($options['skipRotation'] ?? false)) {
+                        $this->maybeScheduleRotation($envelope);
+                    }
+                    $this->recordIntent('decrypt_context', [
+                        'context' => $context,
+                        'localKeyId' => $candidate->id,
+                        'kmsClient' => $envelope->kmsMetadata['client'] ?? null,
+                        'wrapCount' => $envelope->kmsMetadata['wrapCount'] ?? null,
+                        'fallback' => true,
+                        'hintKeyId' => $hintKeyId,
+                    ]);
+                    return $plaintext;
+                } catch (\Throwable $inner) {
+                    $lastError = $inner;
+                    continue;
+                }
+            }
+        } catch (\Throwable $e) {
+            $lastError = $e;
+        }
+
+        throw $lastError ?? new \RuntimeException('decryptContext failed');
     }
 
     /**
