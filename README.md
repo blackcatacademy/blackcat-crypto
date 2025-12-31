@@ -25,15 +25,26 @@ composer require blackcat/crypto
 
 ## Quick start (local keys)
 
+Recommended (BlackCat ecosystem): configure `blackcatacademy/blackcat-config` runtime config with:
+
+- `crypto.keys_dir`
+- `crypto.manifest`
+
+Then `PlatformBootstrap::boot()` can auto-discover it (no env required).
+
+Legacy fallback (standalone/dev): env bootstrap:
+
 ```bash
 export BLACKCAT_KEYS_DIR=./keys
 export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
 
-php bin/crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
-php bin/crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
-php bin/crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
+# If you don't have blackcat-cli, replace `blackcat crypto` with `php bin/crypto`.
 
-php bin/crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
+blackcat crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
+blackcat crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
+blackcat crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
+
+blackcat crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
 ```
 
 Then in PHP:
@@ -56,37 +67,39 @@ This repository intentionally contains **no database code**. For transparent DB 
 
 With those packages installed, `PlatformBootstrap::boot()` can configure the DB ingress locator automatically.
 
-```bash
-export BLACKCAT_DB_ENCRYPTION_MAP=./config/encryption.json
-export BLACKCAT_DB_ENCRYPTION_REQUIRED=1   # fail-closed (recommended)
-export BLACKCAT_KEYS_DIR=./keys
-export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
-```
+In the BlackCat ecosystem, DB ingress is configured via `blackcatacademy/blackcat-config` runtime config:
+
+- `crypto.keys_dir`
+- `crypto.manifest`
+
+And the per-package encryption maps in `blackcatacademy/blackcat-database`:
+
+- `packages/<package>/schema/encryption-map.json`
 
 ## CLI
 
 ```
-php bin/crypto help
-php bin/crypto key:rotate core.crypto.default keys/ --manifest=../blackcat-crypto-manifests/contexts/core.json
-php bin/crypto keys:lint --manifest=../blackcat-crypto-manifests/contexts/core.json --keys-dir=./keys
-php bin/crypto wrap:status storage/envelopes/123.json
-php bin/crypto kms:diag
-php bin/crypto wrap:queue status --limit 10
-php bin/crypto wrap:queue run --limit 25 --dump-dir=/tmp/rewrap
-php bin/crypto manifest:show --output=/tmp/manifest.json
-php bin/crypto vault:diag storage/files/
-php bin/crypto vault:migrate storage/files/foo.enc storage/files/foo.envelope
-php bin/crypto vault:decrypt storage/files/foo.enc --output=/tmp/foo.txt
-php bin/crypto metrics:export prom
-php bin/crypto telemetry:sse --interval=5
-php bin/crypto telemetry:intents --format=prom --limit=25
-php bin/crypto kms:watchdog --interval=30
-php bin/crypto kms:suspend hsm-primary 600
-php bin/crypto kms:resume hsm-primary
-php bin/crypto gov:assess --tenant=acme --sensitivity=low --amount=500
-php bin/crypto vault:coverage var/ingress.ndjson --table --top=5
-php bin/crypto manifest:validate ../blackcat-crypto-manifests/contexts/core.json --json
-php bin/crypto key:rotate app.hsm keys/
+blackcat crypto help
+blackcat crypto key:rotate core.crypto.default keys/ --manifest=../blackcat-crypto-manifests/contexts/core.json
+blackcat crypto keys:lint --manifest=../blackcat-crypto-manifests/contexts/core.json --keys-dir=./keys
+blackcat crypto wrap:status storage/envelopes/123.json
+blackcat crypto kms:diag
+blackcat crypto wrap:queue status --limit 10
+blackcat crypto wrap:queue run --limit 25 --dump-dir=/tmp/rewrap
+blackcat crypto manifest:show --output=/tmp/manifest.json
+blackcat crypto vault:diag storage/files/
+blackcat crypto vault:migrate storage/files/foo.enc storage/files/foo.envelope
+blackcat crypto vault:decrypt storage/files/foo.enc --output=/tmp/foo.txt
+blackcat crypto metrics:export prom
+blackcat crypto telemetry:sse --interval=5
+blackcat crypto telemetry:intents --format=prom --limit=25
+blackcat crypto kms:watchdog --interval=30
+blackcat crypto kms:suspend hsm-primary 600
+blackcat crypto kms:resume hsm-primary
+blackcat crypto gov:assess --tenant=acme --sensitivity=low --amount=500
+blackcat crypto vault:coverage var/ingress.ndjson --table --top=5
+blackcat crypto manifest:validate ../blackcat-crypto-manifests/contexts/core.json --json
+blackcat crypto key:rotate app.hsm keys/
 ```
 
 Note: `key:generate` is deprecated and kept only as an alias for `key:rotate`.
@@ -103,7 +116,7 @@ The `blackcat-crypto-manifests` repo contains shared JSON manifests (`contexts/*
 export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
 
 # compare manifests (e.g. CI)
-php bin/crypto manifest:diff --from=../blackcat-crypto-manifests/contexts/core.json --to=../env/prod/manifest.json --json
+blackcat crypto manifest:diff --from=../blackcat-crypto-manifests/contexts/core.json --to=../env/prod/manifest.json --json
 ```
 
 ## Documentation

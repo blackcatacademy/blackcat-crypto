@@ -10,7 +10,7 @@ use Psr\Log\LoggerInterface;
 /**
  * One-call bootstrap helper for application repositories.
  *
- * - Boots {@see CryptoManager} from env (manifest + keys).
+ * - Boots {@see CryptoManager} from runtime config (preferred) or env (legacy).
  * - If present, initializes `blackcat-core` engines so they delegate to the CoreCryptoBridge.
  * - If present, wires optional `blackcat-database` ingress hooks (gateway factory).
  */
@@ -38,12 +38,52 @@ final class PlatformBootstrap
 
         $env = array_merge((array)getenv(), $_ENV, $_SERVER);
 
-        $keysDir = $options['keys_dir'] ?? ($env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null);
+        $keysDir = $options['keys_dir'] ?? null;
+        $manifest = $options['manifest'] ?? null;
+
+        // Prefer blackcat-config runtime config when available (no env needed).
+        if (($keysDir === null || $manifest === null) && class_exists('\\BlackCat\\Config\\Runtime\\Config')) {
+            try {
+                /** @phpstan-ignore-next-line optional dependency */
+                $repo = null;
+
+                /** @phpstan-ignore-next-line optional dependency */
+                if (\BlackCat\Config\Runtime\Config::isInitialized()) {
+                    /** @phpstan-ignore-next-line optional dependency */
+                    $repo = \BlackCat\Config\Runtime\Config::repo();
+                } elseif (\BlackCat\Config\Runtime\Config::tryInitFromFirstAvailableJsonFile()) {
+                    /** @phpstan-ignore-next-line optional dependency */
+                    $repo = \BlackCat\Config\Runtime\Config::repo();
+                }
+
+                if ($repo !== null) {
+                    if ($keysDir === null) {
+                        $raw = $repo->get('crypto.keys_dir');
+                        if (is_string($raw) && trim($raw) !== '') {
+                            $keysDir = $raw;
+                        }
+                    }
+
+                    if ($manifest === null) {
+                        $raw = $repo->get('crypto.manifest');
+                        if (is_string($raw) && trim($raw) !== '') {
+                            $manifest = $raw;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                if ($strict) {
+                    throw $e;
+                }
+            }
+        }
+
+        $keysDir = $keysDir ?? ($env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null);
         if (is_string($keysDir) && $keysDir !== '') {
             $env['BLACKCAT_KEYS_DIR'] = $keysDir;
         }
 
-        $manifest = $options['manifest'] ?? ($env['BLACKCAT_CRYPTO_MANIFEST'] ?? null);
+        $manifest = $manifest ?? ($env['BLACKCAT_CRYPTO_MANIFEST'] ?? null);
         if (is_string($manifest) && $manifest !== '') {
             $env['BLACKCAT_CRYPTO_MANIFEST'] = $manifest;
         }

@@ -7,7 +7,7 @@
 - Verify the env var points to an existing JSON file:
   - `BLACKCAT_CRYPTO_MANIFEST=/path/to/contexts/core.json`
 - Validate it:
-  - `php bin/crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"`
+  - `blackcat crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"` (or `php bin/crypto …` without `blackcat-cli`)
 
 ## Keys dir not detected
 
@@ -16,14 +16,14 @@
 - Ensure `BLACKCAT_KEYS_DIR` points to a real directory with read permission:
   - `export BLACKCAT_KEYS_DIR=./keys`
 - Lint keys against the manifest:
-  - `php bin/crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"`
+  - `blackcat crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"`
 
 ## Wrong key length / invalid encoding
 
 **Symptom:** `matching files exist but none are valid (decode/length)` or `invalid ... length mismatch`.
 
 - Generate the correct key length for the slot:
-  - `php bin/crypto key:rotate <slot> "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"`
+  - `blackcat crypto key:rotate <slot> "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"`
 - Remember:
   - `.key` files are **raw bytes** (length must match exactly).
   - `.hex` must decode to the exact slot length.
@@ -59,4 +59,3 @@
 
 - Ensure CI has access to the same manifest and keys (or generates them deterministically).
 - Use `keys:lint` in your application repos as an early gate.
-

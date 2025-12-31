@@ -37,15 +37,15 @@ $candidates = $crypto->hmacCandidates('core.hmac.email', $message);
 ## Validate manifest (JSON)
 ```bash
 MANIFEST=../blackcat-crypto-manifests/contexts/core.json
-php bin/crypto manifest:validate "$MANIFEST"
-php bin/crypto manifest:validate "$MANIFEST" --json
+blackcat crypto manifest:validate "$MANIFEST"
+blackcat crypto manifest:validate "$MANIFEST" --json
 ```
 
 ## Rotate keys (dry run)
 ```bash
 MANIFEST=../blackcat-crypto-manifests/contexts/core.json
-php bin/crypto key:rotate core.crypto.default ./keys --manifest="$MANIFEST" --dry-run
-php bin/crypto key:rotate core.hmac.email ./keys --manifest="$MANIFEST" --format=base64 --dry-run
+blackcat crypto key:rotate core.crypto.default ./keys --manifest="$MANIFEST" --dry-run
+blackcat crypto key:rotate core.hmac.email ./keys --manifest="$MANIFEST" --format=base64 --dry-run
 ```
 
 ## Lint keys (CI gate)
@@ -53,8 +53,8 @@ php bin/crypto key:rotate core.hmac.email ./keys --manifest="$MANIFEST" --format
 MANIFEST=../blackcat-crypto-manifests/contexts/core.json
 KEYS_DIR=./keys
 
-php bin/crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR"
-php bin/crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR" --json
+blackcat crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR"
+blackcat crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR" --json
 ```
 
 ## Key sources
@@ -75,14 +75,14 @@ export BC_KEY_CRYPTO_KEY_V3="$(openssl rand -base64 32)"
 ```
 
 ## Export telemetry
-- JSON: `php bin/crypto metrics:export`
-- Prometheus: `php bin/crypto metrics:export prom`
-- OTLP/JSON: `php bin/crypto metrics:export otel`
+- JSON: `blackcat crypto metrics:export`
+- Prometheus: `blackcat crypto metrics:export prom`
+- OTLP/JSON: `blackcat crypto metrics:export otel`
 
 ## Intent telemetry
 ```bash
 export BLACKCAT_CRYPTO_INTENTS=1
-php bin/crypto telemetry:intents --format=otel --limit 10
+blackcat crypto telemetry:intents --format=otel --limit 10
 ```
 
 ## Governance auto-approval API
@@ -134,24 +134,24 @@ $inbox->approve($id, ['approver' => 'alice@example.com']);
 export BLACKCAT_CRYPTO_WRAP_QUEUE='file:///tmp/blackcat-wrap.queue'
 
 # check status/backlog
-php bin/crypto wrap:queue status --limit 25
+blackcat crypto wrap:queue status --limit 25
 
 # process jobs (writes updated envelopes to STDOUT or to --dump-dir)
-php bin/crypto wrap:queue run --limit 50 --dump-dir=./rewrap-out
+blackcat crypto wrap:queue run --limit 50 --dump-dir=./rewrap-out
 ```
 
 ## CI-aware telemetry
 ```bash
 # pass CI env so DB hooks tag build info
 GITHUB_ACTIONS=true GITHUB_RUN_ID=12345 \
-  php bin/crypto metrics:export otel
+  blackcat crypto metrics:export otel
 ```
 
 ## DB crypto snapshots (for db-crypto CI)
 ```bash
-DB_CRYPTO_SNAPSHOT_PATH=./artifacts/db-crypto.json php bin/crypto db:snapshot --format json
-php bin/crypto db:snapshot prom > ./artifacts/db-crypto.prom
-php bin/crypto db:snapshot --format otel --output ./artifacts/db-crypto-otel.json
+DB_CRYPTO_SNAPSHOT_PATH=./artifacts/db-crypto.json blackcat crypto db:snapshot --format json
+blackcat crypto db:snapshot prom > ./artifacts/db-crypto.prom
+blackcat crypto db:snapshot --format otel --output ./artifacts/db-crypto-otel.json
 ```
 
 ## KMS client config (HTTP)

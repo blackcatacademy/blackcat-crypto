@@ -20,15 +20,16 @@ export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
 2) Generate versioned keys for the slots you use:
 
 ```bash
-php vendor/bin/crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
+# If you don't have blackcat-cli, replace `blackcat crypto` with `php vendor/bin/crypto`.
+blackcat crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
 
 # writes files like keys/crypto_key_v1.key (raw bytes)
-php vendor/bin/crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
-php vendor/bin/crypto key:rotate core.vault "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
-php vendor/bin/crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
+blackcat crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
+blackcat crypto key:rotate core.vault "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
+blackcat crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
 
 # CI gate (recommended)
-php vendor/bin/crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
+blackcat crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
 ```
 
 3) Boot crypto in your application:
@@ -114,7 +115,7 @@ export BLACKCAT_CRYPTO_WRAP_QUEUE='file:///var/lib/blackcat/wrap.queue'
 Process the queue (writes updated envelopes to STDOUT or `--dump-dir`):
 
 ```bash
-php vendor/bin/crypto wrap:queue run --limit 50 --dump-dir=./rewrap-out
+blackcat crypto wrap:queue run --limit 50 --dump-dir=./rewrap-out
 ```
 
 ## Optional: blackcat-core bridge
