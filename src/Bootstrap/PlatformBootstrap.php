@@ -12,7 +12,7 @@ use Psr\Log\LoggerInterface;
  *
  * - Boots {@see CryptoManager} from env (manifest + keys).
  * - If present, initializes `blackcat-core` engines so they delegate to the CoreCryptoBridge.
- * - If present, configures `blackcat-database` ingress locator for DB encryption.
+ * - If present, wires optional `blackcat-database` ingress hooks (gateway factory).
  */
 final class PlatformBootstrap
 {
@@ -74,13 +74,7 @@ final class PlatformBootstrap
         }
 
         if (($options['init_database'] ?? true) && class_exists('\\BlackCat\\Database\\Crypto\\IngressLocator')) {
-            $mapPath = $options['db_encryption_map'] ?? ($env['BLACKCAT_DB_ENCRYPTION_MAP'] ?? null);
             try {
-                /** @phpstan-ignore-next-line optional dependency */
-                \BlackCat\Database\Crypto\IngressLocator::configure(
-                    is_string($mapPath) && $mapPath !== '' ? $mapPath : null,
-                    is_string($keysDir) && $keysDir !== '' ? $keysDir : null,
-                );
                 if (isset($options['db_gateway_factory']) && is_callable($options['db_gateway_factory'])) {
                     /** @phpstan-ignore-next-line optional dependency */
                     \BlackCat\Database\Crypto\IngressLocator::setGatewayFactory($options['db_gateway_factory']);

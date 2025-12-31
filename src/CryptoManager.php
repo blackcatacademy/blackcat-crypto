@@ -202,7 +202,7 @@ final class CryptoManager
             $lastError = $e;
         }
 
-        throw $lastError ?? new \RuntimeException('decryptContext failed');
+        throw $lastError;
     }
 
     /**
