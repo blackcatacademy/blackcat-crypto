@@ -16,11 +16,10 @@ final class ManifestShowCommandTest extends TestCase
             'rotation' => [],
         ]));
 
-        $_ENV['BLACKCAT_CRYPTO_MANIFEST'] = $manifest;
         $output = tempnam(sys_get_temp_dir(), 'manifest-out');
 
         $command = new ManifestShowCommand();
-        $exit = $command->run(['--output=' . $output]);
+        $exit = $command->run(['--manifest=' . $manifest, '--output=' . $output]);
 
         self::assertSame(0, $exit);
         $json = json_decode(file_get_contents($output), true);
@@ -29,6 +28,5 @@ final class ManifestShowCommandTest extends TestCase
 
         @unlink($manifest);
         @unlink($output);
-        unset($_ENV['BLACKCAT_CRYPTO_MANIFEST']);
     }
 }

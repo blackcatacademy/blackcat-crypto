@@ -15,7 +15,7 @@ The goal is to keep crypto logic in one place, so other modules can depend on a 
 - **Rotation-safe HMAC**: multi-key verification + `keyId`/candidates for DB patterns.
 - **KMS routing**: pluggable clients (HTTP/HSM), health reporting, suspend/resume.
 - **Async rotation queue**: queue-backed rewrap via CLI (`wrap:queue`).
-- **Zero-boilerplate bootstrap**: `PlatformBootstrap::boot()` wires env + optional bridges.
+- **Zero-boilerplate bootstrap**: `PlatformBootstrap::boot()` wires runtime config + optional bridges.
 
 ## Install
 
@@ -25,26 +25,29 @@ composer require blackcat/crypto
 
 ## Quick start (local keys)
 
-Recommended (BlackCat ecosystem): configure `blackcatacademy/blackcat-config` runtime config with:
+Recommended: configure `blackcatacademy/blackcat-config` runtime config with:
 
 - `crypto.keys_dir`
 - `crypto.manifest`
 
-Then `PlatformBootstrap::boot()` can auto-discover it (no env required).
+Then `PlatformBootstrap::boot()` auto-discovers it (no env required).
 
-Legacy fallback (standalone/dev): env bootstrap:
+Example runtime config (`/etc/blackcat/config.runtime.json`):
+
+```json
+{
+  "crypto": {
+    "keys_dir": "/etc/blackcat/keys",
+    "manifest": "/etc/blackcat/crypto/contexts/core.json"
+  }
+}
+```
 
 ```bash
-export BLACKCAT_KEYS_DIR=./keys
-export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
-
-# If you don't have blackcat-cli, replace `blackcat crypto` with `php bin/crypto`.
-
-blackcat crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
-blackcat crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
-blackcat crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
-
-blackcat crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
+blackcat crypto manifest:validate /etc/blackcat/crypto/contexts/core.json
+blackcat crypto key:rotate core.crypto.default /etc/blackcat/keys --manifest=/etc/blackcat/crypto/contexts/core.json
+blackcat crypto key:rotate core.hmac.email /etc/blackcat/keys --manifest=/etc/blackcat/crypto/contexts/core.json --length=64
+blackcat crypto keys:lint --manifest=/etc/blackcat/crypto/contexts/core.json --keys-dir=/etc/blackcat/keys
 ```
 
 Then in PHP:
@@ -113,8 +116,6 @@ If `blackcat-core` is installed, legacy classes can delegate crypto to this pack
 The `blackcat-crypto-manifests` repo contains shared JSON manifests (`contexts/*.json`):
 
 ```bash
-export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
-
 # compare manifests (e.g. CI)
 blackcat crypto manifest:diff --from=../blackcat-crypto-manifests/contexts/core.json --to=../env/prod/manifest.json --json
 ```

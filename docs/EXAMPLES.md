@@ -4,7 +4,7 @@
 ```php
 use BlackCat\Crypto\Bootstrap\PlatformBootstrap;
 
-$crypto = PlatformBootstrap::boot(); // uses BLACKCAT_KEYS_DIR + BLACKCAT_CRYPTO_MANIFEST
+$crypto = PlatformBootstrap::boot(); // uses blackcat-config runtime config (crypto.keys_dir, crypto.manifest)
 ```
 
 ## Encrypt/Decrypt (context envelope)
@@ -60,19 +60,7 @@ blackcat crypto keys:lint --manifest="$MANIFEST" --keys-dir="$KEYS_DIR" --json
 ## Key sources
 
 Filesystem (recommended): `*_vN.key` (raw bytes). Optional: `*_vN.hex`, `*_vN.b64`.
-
-Env vars: `BC_KEY_<KEYNAME>_V<N>` (+ optional encoding hint `_HEX|_B64|_RAW`).
-
-```bash
-# raw bytes file:
-ls keys/crypto_key_v1.key
-
-# hex:
-echo -n "deadbeef..." > keys/crypto_key_v2.hex
-
-# base64 env (auto-detect works for base64 too):
-export BC_KEY_CRYPTO_KEY_V3="$(openssl rand -base64 32)"
-```
+Runtime note: for security hardening, key material should come from a filesystem boundary (or a secrets-agent boundary), not from environment variables.
 
 ## Export telemetry
 - JSON: `blackcat crypto metrics:export`
@@ -131,7 +119,10 @@ $inbox->approve($id, ['approver' => 'alice@example.com']);
 
 ## Wrap queue
 ```bash
-export BLACKCAT_CRYPTO_WRAP_QUEUE='file:///tmp/blackcat-wrap.queue'
+# Configure in runtime config:
+# {
+#   "crypto": { "wrap_queue": "file:///tmp/blackcat-wrap.queue" }
+# }
 
 # check status/backlog
 blackcat crypto wrap:queue status --limit 25
@@ -155,33 +146,39 @@ blackcat crypto db:snapshot --format otel --output ./artifacts/db-crypto-otel.js
 ```
 
 ## KMS client config (HTTP)
-```yaml
-kms:
-  - id: primary-http
-    type: http
-    base_uri: https://kms.example.com
-    bearer: "${KMS_BEARER_TOKEN}"
-    basic:
-      user: "${KMS_USER}"
-      pass: "${KMS_PASS}"
-    headers:
-      X-Tenant: acme
-    ssl:
-      ca: /etc/ssl/certs/ca.pem
-      cert: /etc/ssl/certs/client.pem
-      key: /etc/ssl/private/client.key
-      verify_peer: true
-    timeouts:
-      connect: 2
-      read: 5
+Runtime config (example):
+
+```json
+{
+  "crypto": {
+    "kms_endpoints": [
+      {
+        "id": "primary-http",
+        "type": "http",
+        "endpoint": "https://kms.example.com",
+        "headers": { "X-Tenant": "acme" },
+        "timeouts": { "connect": 2, "read": 5 }
+      }
+    ]
+  }
+}
 ```
 
 ## KMS client config (HSM)
-```yaml
-kms:
-  - id: pci-hsm
-    type: hsm
-    endpoint: tcp://10.0.0.5:9000
-    allow_ciphers: [aes-256-gcm, aes-192-gcm]
-    tag_length: 16   # validated: must be 8..32
+Runtime config (example):
+
+```json
+{
+  "crypto": {
+    "kms_endpoints": [
+      {
+        "id": "pci-hsm",
+        "type": "hsm",
+        "endpoint": "hsm://slot1",
+        "allow_ciphers": ["aes-256-gcm", "aes-192-gcm"],
+        "tag_length": 16
+      }
+    ]
+  }
+}
 ```

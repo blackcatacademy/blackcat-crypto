@@ -24,8 +24,6 @@ final class VaultDecryptCommandTest extends TestCase
             'slots' => ['core.vault' => ['type' => 'aead', 'key' => 'filevault_key']],
         ]));
 
-        $_ENV['BLACKCAT_KEYS_DIR'] = $this->keysDir;
-        $_ENV['BLACKCAT_CRYPTO_MANIFEST'] = $this->manifest;
         CoreCryptoBridge::configure([
             'keys_dir' => $this->keysDir,
             'manifest' => $this->manifest,
@@ -36,7 +34,6 @@ final class VaultDecryptCommandTest extends TestCase
     protected function tearDown(): void
     {
         CoreCryptoBridge::flush();
-        unset($_ENV['BLACKCAT_KEYS_DIR'], $_ENV['BLACKCAT_CRYPTO_MANIFEST']);
         foreach (glob($this->keysDir . '/*') as $file) {
             @unlink($file);
         }

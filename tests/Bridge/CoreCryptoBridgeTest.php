@@ -85,36 +85,4 @@ final class CoreCryptoBridgeTest extends TestCase
         $all = CoreCryptoBridge::listKeyMaterial('crypto.default');
         self::assertNotEmpty($all);
     }
-
-    public function testBootUsesEnvKeysDirWhenNotExplicitlyConfigured(): void
-    {
-        CoreCryptoBridge::flush();
-
-        $old = getenv('BLACKCAT_KEYS_DIR');
-        try {
-            putenv('BLACKCAT_KEYS_DIR=' . $this->keysDir);
-            $_ENV['BLACKCAT_KEYS_DIR'] = $this->keysDir;
-            $_SERVER['BLACKCAT_KEYS_DIR'] = $this->keysDir;
-
-            // Configure only the manifest; keys_dir is resolved from env.
-            CoreCryptoBridge::configure([
-                'keys_dir' => null,
-                'manifest' => $this->manifest,
-            ]);
-            CoreCryptoBridge::boot();
-
-            $cipher = CoreCryptoBridge::encryptBinary('crypto.default', 'env-keys-dir');
-            $plain = CoreCryptoBridge::decryptBinary('crypto.default', $cipher);
-            self::assertSame('env-keys-dir', $plain);
-        } finally {
-            if ($old === false) {
-                putenv('BLACKCAT_KEYS_DIR');
-                unset($_ENV['BLACKCAT_KEYS_DIR'], $_SERVER['BLACKCAT_KEYS_DIR']);
-            } else {
-                putenv('BLACKCAT_KEYS_DIR=' . $old);
-                $_ENV['BLACKCAT_KEYS_DIR'] = $old;
-                $_SERVER['BLACKCAT_KEYS_DIR'] = $old;
-            }
-        }
-    }
 }

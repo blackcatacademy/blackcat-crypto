@@ -21,8 +21,12 @@ final class CryptoConfigTest extends TestCase
         ];
         file_put_contents($manifest, json_encode($data));
 
-        $config = CryptoConfig::fromEnv([
-            'BLACKCAT_CRYPTO_MANIFEST' => $manifest,
+        $keysDir = sys_get_temp_dir() . '/blackcat-keys-' . bin2hex(random_bytes(4));
+        @mkdir($keysDir, 0770, true);
+
+        $config = CryptoConfig::fromArray([
+            'keys_dir' => $keysDir,
+            'manifest' => $manifest,
         ]);
 
         $slots = $config->slots();
@@ -32,5 +36,6 @@ final class CryptoConfigTest extends TestCase
         self::assertSame($manifest, $config->manifestPath());
 
         @unlink($manifest);
+        @rmdir($keysDir);
     }
 }

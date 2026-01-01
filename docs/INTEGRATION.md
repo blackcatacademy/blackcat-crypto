@@ -10,26 +10,34 @@ composer require blackcat/crypto
 
 ## Minimal setup (local keys only)
 
-1) Pick a keys directory and a manifest:
+1) Create a runtime config file (recommended: `/etc/blackcat/config.runtime.json`) with:
 
-```bash
-export BLACKCAT_KEYS_DIR=./keys
-export BLACKCAT_CRYPTO_MANIFEST=../blackcat-crypto-manifests/contexts/core.json
+- `crypto.keys_dir`
+- `crypto.manifest`
+
+Example:
+
+```json
+{
+  "crypto": {
+    "keys_dir": "/etc/blackcat/keys",
+    "manifest": "/etc/blackcat/crypto/contexts/core.json"
+  }
+}
 ```
 
 2) Generate versioned keys for the slots you use:
 
 ```bash
-# If you don't have blackcat-cli, replace `blackcat crypto` with `php vendor/bin/crypto`.
-blackcat crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"
+blackcat crypto manifest:validate /etc/blackcat/crypto/contexts/core.json
 
 # writes files like keys/crypto_key_v1.key (raw bytes)
-blackcat crypto key:rotate core.crypto.default "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
-blackcat crypto key:rotate core.vault "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"
-blackcat crypto key:rotate core.hmac.email "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST" --length=64
+blackcat crypto key:rotate core.crypto.default /etc/blackcat/keys --manifest=/etc/blackcat/crypto/contexts/core.json
+blackcat crypto key:rotate core.vault /etc/blackcat/keys --manifest=/etc/blackcat/crypto/contexts/core.json
+blackcat crypto key:rotate core.hmac.email /etc/blackcat/keys --manifest=/etc/blackcat/crypto/contexts/core.json --length=64
 
 # CI gate (recommended)
-blackcat crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"
+blackcat crypto keys:lint --manifest=/etc/blackcat/crypto/contexts/core.json --keys-dir=/etc/blackcat/keys
 ```
 
 3) Boot crypto in your application:
@@ -43,8 +51,6 @@ $crypto = PlatformBootstrap::boot();
 ## Key sources
 
 - **Filesystem (recommended):** `*_vN.key` (raw bytes), plus optional `*_vN.hex` and `*_vN.b64`.
-- **Environment:** `BC_KEY_<KEYNAME>_V<N>` (auto-detects hex/base64/raw) with an optional hint suffix:
-  - `..._HEX`, `..._B64`/`..._BASE64`, `..._RAW`
 
 Notes:
 - Key IDs are canonicalized to `<keyname>_vN.key` regardless of source/extension (safe to store as `*_key_version`).
@@ -94,12 +100,18 @@ $candidates = $crypto->hmacCandidates('core.hmac.email', $message);
 
 ## Optional: KMS wrapping
 
-Set `BLACKCAT_KMS_ENDPOINTS` to a JSON array of KMS client definitions:
+Configure KMS endpoints in runtime config (`crypto.kms_endpoints`).
 
-```bash
-export BLACKCAT_KMS_ENDPOINTS='[
-  {"id":"primary","type":"http","endpoint":"https://kms.example.com","token":"${KMS_TOKEN}"}
-]'
+Example:
+
+```json
+{
+  "crypto": {
+    "kms_endpoints": [
+      { "id": "primary", "type": "http", "endpoint": "https://kms.example.com" }
+    ]
+  }
+}
 ```
 
 If no suitable KMS client matches a given context, `CryptoManager` falls back to local-only metadata.
@@ -108,9 +120,7 @@ If no suitable KMS client matches a given context, `CryptoManager` falls back to
 
 Rotation is asynchronous: if a rotation policy matches an envelope, `CryptoManager` enqueues a wrap job.
 
-```bash
-export BLACKCAT_CRYPTO_WRAP_QUEUE='file:///var/lib/blackcat/wrap.queue'
-```
+Configure wrap queue in runtime config (`crypto.wrap_queue`), e.g. `file:///var/lib/blackcat/wrap.queue`.
 
 Process the queue (writes updated envelopes to STDOUT or `--dump-dir`):
 

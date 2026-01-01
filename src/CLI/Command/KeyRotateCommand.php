@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Crypto\Config\CryptoConfig;
 use Psr\Log\LoggerInterface;
 
 final class KeyRotateCommand implements CommandInterface
@@ -26,7 +27,15 @@ final class KeyRotateCommand implements CommandInterface
         $slot = $positionals[0] ?? null;
         $target = $positionals[1] ?? null;
         $format = strtolower((string)($options['format'] ?? 'raw'));
-        $manifestPath = $options['manifest'] ?? getenv('BLACKCAT_CRYPTO_MANIFEST') ?: null;
+        $manifestPath = $options['manifest'] ?? null;
+        if (!is_string($manifestPath) || trim($manifestPath) === '') {
+            $manifestPath = null;
+            try {
+                $cfg = CryptoConfig::fromRuntimeConfig();
+                $manifestPath = $cfg->manifestPath();
+            } catch (\Throwable) {
+            }
+        }
         $requestedVersion = isset($options['version']) && is_numeric($options['version']) ? (int)$options['version'] : null;
         $dryRun = array_key_exists('dry-run', $options) || array_key_exists('dry', $options);
         $jsonOut = array_key_exists('json', $options);

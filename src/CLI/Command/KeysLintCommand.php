@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Crypto\Config\CryptoConfig;
+
 final class KeysLintCommand implements CommandInterface
 {
     private const EXT_KEY = 'key';
@@ -27,8 +29,29 @@ final class KeysLintCommand implements CommandInterface
         $failOnWarn = array_key_exists('fail-on-warn', $options);
         $warnExtra = array_key_exists('warn-extra', $options);
 
-        $manifestPath = $options['manifest'] ?? getenv('BLACKCAT_CRYPTO_MANIFEST') ?: null;
-        $keysDir = $options['keys-dir'] ?? $options['keys_dir'] ?? getenv('BLACKCAT_KEYS_DIR') ?: getenv('APP_KEYS_DIR') ?: null;
+        $manifestPath = $options['manifest'] ?? null;
+        $keysDir = $options['keys-dir'] ?? $options['keys_dir'] ?? null;
+
+        // Prefer runtime config (fail-closed default).
+        try {
+            $cfg = CryptoConfig::fromRuntimeConfig();
+            if ($manifestPath === null) {
+                $manifestPath = $cfg->manifestPath();
+            }
+            if ($keysDir === null) {
+                foreach ($cfg->keySources() as $source) {
+                    if (($source['type'] ?? '') === 'filesystem') {
+                        $p = $source['path'] ?? null;
+                        if (is_string($p) && trim($p) !== '') {
+                            $keysDir = trim($p);
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Intentionally ignore here; usage errors are reported below.
+        }
 
         if ($manifestPath === null || $keysDir === null) {
             if ($json) {
@@ -40,7 +63,6 @@ final class KeysLintCommand implements CommandInterface
                 return 1;
             }
             fwrite(STDERR, "Usage: keys:lint --manifest=path --keys-dir=path [--json] [--warn-extra] [--fail-on-warn]\n");
-            fwrite(STDERR, "Env fallback: BLACKCAT_CRYPTO_MANIFEST + BLACKCAT_KEYS_DIR\n");
             return 1;
         }
 

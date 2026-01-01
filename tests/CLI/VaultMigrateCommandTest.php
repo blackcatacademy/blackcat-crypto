@@ -29,8 +29,6 @@ final class VaultMigrateCommandTest extends TestCase
             ],
         ]));
 
-        $_ENV['BLACKCAT_KEYS_DIR'] = $this->keysDir;
-        $_ENV['BLACKCAT_CRYPTO_MANIFEST'] = $this->manifest;
         CoreCryptoBridge::configure([
             'keys_dir' => $this->keysDir,
             'manifest' => $this->manifest,
@@ -40,7 +38,6 @@ final class VaultMigrateCommandTest extends TestCase
     protected function tearDown(): void
     {
         CoreCryptoBridge::flush();
-        unset($_ENV['BLACKCAT_KEYS_DIR'], $_ENV['BLACKCAT_CRYPTO_MANIFEST']);
         if (is_dir($this->tmpDir)) {
             $files = new \RecursiveIteratorIterator(
                 new \RecursiveDirectoryIterator($this->tmpDir, \FilesystemIterator::SKIP_DOTS),

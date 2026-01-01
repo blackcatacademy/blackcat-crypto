@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Config\Runtime\ConfigRepository;
 use BlackCat\Crypto\Config\CryptoConfig;
 use BlackCat\Crypto\Kms\KmsRouter;
 use Psr\Log\LoggerInterface;
@@ -17,10 +18,19 @@ final class KmsDiagCommand implements CommandInterface
     /** @param list<string> $args */
     public function run(array $args): int
     {
-        $config = CryptoConfig::fromEnv();
+        $configPath = null;
+        foreach ($args as $arg) {
+            if (str_starts_with($arg, '--config=')) {
+                $configPath = substr($arg, 9);
+            }
+        }
+
+        $config = $configPath !== null && $configPath !== ''
+            ? CryptoConfig::fromRuntimeConfig(ConfigRepository::fromJsonFile($configPath))
+            : CryptoConfig::fromRuntimeConfig();
         $kmsConfig = $config->kmsConfig();
         if ($kmsConfig === []) {
-            fwrite(STDERR, "No KMS endpoints configured (set BLACKCAT_KMS_ENDPOINTS).\n");
+            fwrite(STDERR, "No KMS endpoints configured (set runtime config crypto.kms_endpoints).\n");
             return 1;
         }
         $router = new KmsRouter($kmsConfig, $this->logger);

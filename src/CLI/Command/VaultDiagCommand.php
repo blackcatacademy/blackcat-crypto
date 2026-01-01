@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Crypto\Config\CryptoConfig;
+
 final class VaultDiagCommand implements CommandInterface
 {
     private const STATUS_OK = 'ok';
@@ -71,10 +73,10 @@ final class VaultDiagCommand implements CommandInterface
             if (str_starts_with($arg, '--')) {
                 [$key, $value] = array_pad(explode('=', substr($arg, 2), 2), 2, '1');
                 if ($key === 'manifest' && $value === '1') {
-                    $value = (string)getenv('BLACKCAT_CRYPTO_MANIFEST');
+                    $value = $this->defaultManifestPath();
                 }
                 if ($key === 'manifest' && $value === '') {
-                    $value = (string)getenv('BLACKCAT_CRYPTO_MANIFEST');
+                    $value = $this->defaultManifestPath();
                 }
                 if ($key === 'inline-meta') {
                     $value = '1';
@@ -114,7 +116,10 @@ final class VaultDiagCommand implements CommandInterface
      */
     private function loadManifest(string $path): array
     {
-        $path = $path ?: (string)getenv('BLACKCAT_CRYPTO_MANIFEST');
+        $path = trim($path);
+        if ($path === '') {
+            $path = $this->defaultManifestPath();
+        }
         if ($path === '' || !is_file($path)) {
             return [];
         }
@@ -123,6 +128,16 @@ final class VaultDiagCommand implements CommandInterface
             return [];
         }
         return array_keys($json['slots']);
+    }
+
+    private function defaultManifestPath(): string
+    {
+        try {
+            $cfg = CryptoConfig::fromRuntimeConfig();
+            return (string)($cfg->manifestPath() ?? '');
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**

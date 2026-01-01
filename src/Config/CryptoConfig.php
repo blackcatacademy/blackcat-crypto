@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\Config;
 
+use BlackCat\Config\Runtime\Config as RuntimeConfig;
+use BlackCat\Config\Runtime\ConfigRepository;
+use BlackCat\Config\Runtime\RuntimeConfigValidator;
 use BlackCat\Crypto\Queue\FileWrapQueue;
 use BlackCat\Crypto\Queue\InMemoryWrapQueue;
 use Closure;
@@ -26,16 +29,46 @@ final class CryptoConfig
         private readonly ?string $manifestPath = null,
     ) {}
 
-    /** @param array<string,mixed> $env */
-    public static function fromEnv(array $env = []): self
+    /**
+     * Build CryptoConfig from a BlackCat runtime config repository.
+     *
+     * This is the recommended bootstrap path (no getenv/ENV needed).
+     */
+    public static function fromRuntimeConfig(?ConfigRepository $repo = null): self
     {
-        // merge all possible env sources so putenv/$_ENV/$_SERVER are seen in tests and runtime
-        $env = $env ?: array_merge((array)getenv(), $_ENV, $_SERVER);
-        $keysDir = $env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null;
-        $kms = json_decode($env['BLACKCAT_KMS_ENDPOINTS'] ?? '[]', true) ?: [];
-        $rotation = json_decode($env['BLACKCAT_CRYPTO_ROTATION'] ?? '[]', true) ?: [];
-        $driver = strtolower((string)($env['BLACKCAT_CRYPTO_AEAD'] ?? 'xchacha'));
-        $queueSpec = (string)($env['BLACKCAT_CRYPTO_WRAP_QUEUE'] ?? '');
+        if ($repo === null) {
+            RuntimeConfig::initFromFirstAvailableJsonFileIfNeeded();
+            $repo = RuntimeConfig::repo();
+        }
+
+        RuntimeConfigValidator::assertCryptoConfig($repo);
+
+        $keysDir = $repo->resolvePath($repo->requireString('crypto.keys_dir'));
+
+        $manifestSlots = [];
+        $manifestRotation = [];
+        $manifestPath = null;
+
+        $manifestRaw = $repo->get('crypto.manifest');
+        if (is_string($manifestRaw) && trim($manifestRaw) !== '') {
+            $candidate = $repo->resolvePath($manifestRaw);
+            if (is_file($candidate)) {
+                $manifestPath = $candidate;
+                [$manifestSlots, $manifestRotation] = self::loadManifest($candidate);
+            }
+        }
+
+        $kms = self::normalizeKmsConfig($repo->get('crypto.kms_endpoints') ?? $repo->get('crypto.kms.endpoints') ?? $repo->get('crypto.kms'));
+        $rotation = self::normalizeRotationConfig($repo->get('crypto.rotation') ?? $repo->get('crypto.rotation_policies'));
+
+        if ($manifestRotation !== []) {
+            // Allow runtime config to override manifest defaults (per-install tuning).
+            $rotation = array_replace($manifestRotation, $rotation);
+        }
+
+        $driver = strtolower((string)($repo->get('crypto.aead') ?? $repo->get('crypto.aead_driver') ?? 'xchacha'));
+        $queueSpec = (string)($repo->get('crypto.wrap_queue') ?? $repo->get('crypto.wrap_queue_uri') ?? '');
+
         $queueFactory = null;
         if ($queueSpec !== '') {
             $queueFactory = static function () use ($queueSpec) {
@@ -48,42 +81,104 @@ final class CryptoConfig
                 return new FileWrapQueue($path);
             };
         }
-        $manifestPath = $env['BLACKCAT_CRYPTO_MANIFEST'] ?? null;
-        $manifestSlots = [];
-        $manifestRotation = [];
-        if ($manifestPath && is_file($manifestPath)) {
-            [$manifestSlots, $manifestRotation] = self::loadManifest($manifestPath);
+
+        return new self(
+            keySources: [
+                ['type' => 'filesystem', 'path' => $keysDir],
+            ],
+            slots: $manifestSlots,
+            kms: $kms,
+            rotationPolicies: $rotation,
+            aeadDriver: in_array($driver, ['xchacha','hybrid'], true) ? $driver : 'xchacha',
+            wrapQueueFactory: $queueFactory,
+            manifestPath: $manifestPath && is_file($manifestPath) ? $manifestPath : null,
+        );
+    }
+
+    /**
+     * Legacy-compatible builder.
+     *
+     * - If `$env` is empty, this boots from blackcat-config runtime config (recommended).
+     * - If `$env` is provided, it is treated as an explicit input array (tests/legacy callers),
+     *   and this method does NOT call getenv()/$_ENV discovery.
+     *
+     * @param array<string,mixed> $env
+     */
+    public static function fromEnv(array $env = []): self
+    {
+        if ($env === []) {
+            return self::fromRuntimeConfig();
         }
 
-        if (!empty($manifestRotation)) {
+        $keysDir = $env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null;
+        $manifest = $env['BLACKCAT_CRYPTO_MANIFEST'] ?? null;
+
+        return self::fromArray([
+            'keys_dir' => is_string($keysDir) ? $keysDir : '',
+            'manifest' => is_string($manifest) ? $manifest : null,
+            'kms' => $env['BLACKCAT_KMS_ENDPOINTS'] ?? null,
+            'rotation' => $env['BLACKCAT_CRYPTO_ROTATION'] ?? null,
+            'aead' => $env['BLACKCAT_CRYPTO_AEAD'] ?? null,
+            'wrap_queue' => $env['BLACKCAT_CRYPTO_WRAP_QUEUE'] ?? null,
+        ]);
+    }
+
+    /**
+     * Legacy/testing helper: build CryptoConfig from an explicit array.
+     *
+     * This method intentionally does NOT call getenv()/$_ENV discovery.
+     *
+     * Supported keys (subset):
+     * - keys_dir (required)
+     * - manifest (optional)
+     *
+     * @param array<string,mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $keysDir = $data['keys_dir'] ?? null;
+        if (!is_string($keysDir) || trim($keysDir) === '') {
+            throw new \InvalidArgumentException('CryptoConfig keys_dir is required.');
+        }
+        $keysDir = trim($keysDir);
+
+        $manifestSlots = [];
+        $manifestRotation = [];
+        $manifestPath = null;
+
+        $manifest = $data['manifest'] ?? null;
+        if (is_string($manifest) && trim($manifest) !== '') {
+            $manifestPath = trim($manifest);
+            if (is_file($manifestPath)) {
+                [$manifestSlots, $manifestRotation] = self::loadManifest($manifestPath);
+            }
+        }
+
+        $kms = self::normalizeKmsConfig($data['kms_endpoints'] ?? $data['kms'] ?? null);
+        $rotation = self::normalizeRotationConfig($data['rotation'] ?? $data['rotation_policies'] ?? null);
+        if ($manifestRotation !== []) {
             $rotation = array_replace($manifestRotation, $rotation);
         }
 
-        // Fallback: parse comma-separated KMS endpoints like "a=http://host:7001,b=hsm://slot1".
-        if ($kms === [] && isset($env['BLACKCAT_KMS_ENDPOINTS']) && $env['BLACKCAT_KMS_ENDPOINTS'] !== '') {
-            $pairs = array_filter(array_map('trim', explode(',', (string)$env['BLACKCAT_KMS_ENDPOINTS'])));
-            foreach ($pairs as $pair) {
-                if (!str_contains($pair, '=')) {
-                    continue;
+        $driver = strtolower((string)($data['aead'] ?? $data['aead_driver'] ?? 'xchacha'));
+
+        $queueSpec = (string)($data['wrap_queue'] ?? $data['wrap_queue_uri'] ?? '');
+        $queueFactory = null;
+        if ($queueSpec !== '') {
+            $queueFactory = static function () use ($queueSpec) {
+                if ($queueSpec === 'memory') {
+                    return new InMemoryWrapQueue();
                 }
-                [$id, $endpoint] = array_map('trim', explode('=', $pair, 2));
-                if ($id === '' || $endpoint === '') {
-                    continue;
-                }
-                $scheme = parse_url($endpoint, PHP_URL_SCHEME) ?: '';
-                $type = $scheme === 'hsm' ? 'hsm' : 'http';
-                $kms[] = [
-                    'id' => $id,
-                    'endpoint' => $endpoint,
-                    'type' => $type,
-                ];
-            }
+                $path = str_starts_with($queueSpec, 'file://')
+                    ? substr($queueSpec, 7)
+                    : $queueSpec;
+                return new FileWrapQueue($path);
+            };
         }
 
         return new self(
             keySources: [
                 ['type' => 'filesystem', 'path' => $keysDir],
-                ['type' => 'env', 'prefix' => 'BC_KEY_'],
             ],
             slots: $manifestSlots,
             kms: $kms,
@@ -163,5 +258,81 @@ final class CryptoConfig
             $rotation = [];
         }
         return [$slots, $rotation];
+    }
+
+    /**
+     * @return array<int|string,mixed>
+     */
+    private static function normalizeKmsConfig(mixed $raw): array
+    {
+        if ($raw === null) {
+            return [];
+        }
+
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        if (is_string($raw)) {
+            $raw = trim($raw);
+            if ($raw === '') {
+                return [];
+            }
+
+            $json = json_decode($raw, true);
+            if (is_array($json)) {
+                return $json;
+            }
+
+            // Parse comma-separated KMS endpoints like "a=http://host:7001,b=hsm://slot1".
+            $kms = [];
+            $pairs = array_filter(array_map('trim', explode(',', $raw)));
+            foreach ($pairs as $pair) {
+                if (!str_contains($pair, '=')) {
+                    continue;
+                }
+                [$id, $endpoint] = array_map('trim', explode('=', $pair, 2));
+                if ($id === '' || $endpoint === '') {
+                    continue;
+                }
+                $scheme = parse_url($endpoint, PHP_URL_SCHEME) ?: '';
+                $type = $scheme === 'hsm' ? 'hsm' : 'http';
+                $kms[] = [
+                    'id' => $id,
+                    'endpoint' => $endpoint,
+                    'type' => $type,
+                ];
+            }
+            return $kms;
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    private static function normalizeRotationConfig(mixed $raw): array
+    {
+        if ($raw === null) {
+            return [];
+        }
+
+        if (is_array($raw)) {
+            /** @var array<string,array<string,mixed>> $raw */
+            return $raw;
+        }
+
+        if (is_string($raw)) {
+            $raw = trim($raw);
+            if ($raw === '') {
+                return [];
+            }
+
+            $json = json_decode($raw, true);
+            return is_array($json) ? $json : [];
+        }
+
+        return [];
     }
 }

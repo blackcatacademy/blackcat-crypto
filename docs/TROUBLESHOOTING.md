@@ -4,38 +4,29 @@
 
 **Symptom:** `Manifest is not readable` / `Manifest is not valid JSON` / `slots must be a non-empty object`.
 
-- Verify the env var points to an existing JSON file:
-  - `BLACKCAT_CRYPTO_MANIFEST=/path/to/contexts/core.json`
+- Verify your runtime config points to an existing JSON file:
+  - `crypto.manifest=/path/to/contexts/core.json`
 - Validate it:
-  - `blackcat crypto manifest:validate "$BLACKCAT_CRYPTO_MANIFEST"` (or `php bin/crypto …` without `blackcat-cli`)
+  - `blackcat crypto manifest:validate /path/to/contexts/core.json`
 
 ## Keys dir not detected
 
 **Symptom:** `CoreCryptoBridge requires readable keys_dir directory` or `Keys directory is not readable`.
 
-- Ensure `BLACKCAT_KEYS_DIR` points to a real directory with read permission:
-  - `export BLACKCAT_KEYS_DIR=./keys`
+- Ensure runtime config `crypto.keys_dir` points to a real directory with read permission.
 - Lint keys against the manifest:
-  - `blackcat crypto keys:lint --manifest="$BLACKCAT_CRYPTO_MANIFEST" --keys-dir="$BLACKCAT_KEYS_DIR"`
+  - `blackcat crypto keys:lint --manifest=/path/to/contexts/core.json --keys-dir=/path/to/keys`
 
 ## Wrong key length / invalid encoding
 
 **Symptom:** `matching files exist but none are valid (decode/length)` or `invalid ... length mismatch`.
 
 - Generate the correct key length for the slot:
-  - `blackcat crypto key:rotate <slot> "$BLACKCAT_KEYS_DIR" --manifest="$BLACKCAT_CRYPTO_MANIFEST"`
+  - `blackcat crypto key:rotate <slot> /path/to/keys --manifest=/path/to/contexts/core.json`
 - Remember:
   - `.key` files are **raw bytes** (length must match exactly).
   - `.hex` must decode to the exact slot length.
   - `.b64` must decode to the exact slot length.
-
-## Env key values don’t work
-
-**Symptom:** keys from `BC_KEY_*` are not picked up or decode fails.
-
-- Use the `BC_KEY_<KEYNAME>_V<N>` naming (optionally add `_HEX|_B64|_RAW`):
-  - `export BC_KEY_CRYPTO_KEY_V1="$(openssl rand -base64 32)"`
-  - `export BC_KEY_CRYPTO_KEY_V2_HEX="$(openssl rand -hex 32)"`
 
 ## HMAC verification fails after rotation
 
@@ -51,7 +42,7 @@
 **Symptom:** envelopes show `"client":"local"` in KMS metadata.
 
 - That means no KMS client matched the context, or no KMS was configured.
-- Provide `BLACKCAT_KMS_ENDPOINTS` (JSON array) and (optionally) `contexts` patterns per client.
+- Provide runtime config `crypto.kms_endpoints` (JSON array or `id=endpoint,...`) and (optionally) `contexts` patterns per client.
 
 ## CI differences
 

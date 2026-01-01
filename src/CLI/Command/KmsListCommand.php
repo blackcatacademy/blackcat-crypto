@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Config\Runtime\ConfigRepository;
 use BlackCat\Crypto\Config\CryptoConfig;
 use BlackCat\Crypto\Kms\KmsRouter;
 use Psr\Log\LoggerInterface;
@@ -25,9 +26,20 @@ final class KmsListCommand implements CommandInterface
     public function run(array $args): int
     {
         $json = in_array('--json', $args, true);
-        $cfg = CryptoConfig::fromEnv()->kmsConfig();
+        $configPath = null;
+        foreach ($args as $arg) {
+            if (str_starts_with($arg, '--config=')) {
+                $configPath = substr($arg, 9);
+            }
+        }
+
+        $cryptoCfg = $configPath !== null && $configPath !== ''
+            ? CryptoConfig::fromRuntimeConfig(ConfigRepository::fromJsonFile($configPath))
+            : CryptoConfig::fromRuntimeConfig();
+
+        $cfg = $cryptoCfg->kmsConfig();
         if ($cfg === []) {
-            fwrite(STDERR, "No KMS endpoints configured (set BLACKCAT_KMS_ENDPOINTS).\n");
+            fwrite(STDERR, "No KMS endpoints configured (set runtime config crypto.kms_endpoints).\n");
             return 1;
         }
 

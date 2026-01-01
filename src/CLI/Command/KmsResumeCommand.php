@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Config\Runtime\ConfigRepository;
 use BlackCat\Crypto\Config\CryptoConfig;
 use BlackCat\Crypto\Kms\KmsRouter;
 use Psr\Log\LoggerInterface;
@@ -24,15 +25,30 @@ final class KmsResumeCommand implements CommandInterface
     /** @param list<string> $args */
     public function run(array $args): int
     {
+        $configPath = null;
+        $filtered = [];
+        foreach ($args as $arg) {
+            if (str_starts_with($arg, '--config=')) {
+                $configPath = substr($arg, 9);
+                continue;
+            }
+            $filtered[] = $arg;
+        }
+        $args = $filtered;
+
         $clientId = $args[0] ?? null;
         if ($clientId === null) {
-            fwrite(STDERR, "Usage: kms:resume <client-id>\n");
+            fwrite(STDERR, "Usage: kms:resume [--config=path] <client-id>\n");
             return 1;
         }
 
-        $cfg = CryptoConfig::fromEnv()->kmsConfig();
+        $cryptoCfg = $configPath !== null && $configPath !== ''
+            ? CryptoConfig::fromRuntimeConfig(ConfigRepository::fromJsonFile($configPath))
+            : CryptoConfig::fromRuntimeConfig();
+
+        $cfg = $cryptoCfg->kmsConfig();
         if ($cfg === []) {
-            fwrite(STDERR, "No KMS endpoints configured (set BLACKCAT_KMS_ENDPOINTS).\n");
+            fwrite(STDERR, "No KMS endpoints configured (set runtime config crypto.kms_endpoints).\n");
             return 1;
         }
 

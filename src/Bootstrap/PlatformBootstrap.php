@@ -10,7 +10,7 @@ use Psr\Log\LoggerInterface;
 /**
  * One-call bootstrap helper for application repositories.
  *
- * - Boots {@see CryptoManager} from runtime config (preferred) or env (legacy).
+ * - Boots {@see CryptoManager} from runtime config (preferred) or explicit options.
  * - If present, initializes `blackcat-core` engines so they delegate to the CoreCryptoBridge.
  * - If present, wires optional `blackcat-database` ingress hooks (gateway factory).
  */
@@ -20,6 +20,10 @@ final class PlatformBootstrap
      * @param array{
      *   keys_dir?:string,
      *   manifest?:string,
+     *   kms?:mixed,
+     *   rotation?:mixed,
+     *   aead?:mixed,
+     *   wrap_queue?:mixed,
      *   logger?:mixed,
      *   strict?:bool,
      *   init_core?:bool,
@@ -36,39 +40,31 @@ final class PlatformBootstrap
             throw new \InvalidArgumentException('PlatformBootstrap: logger must implement LoggerInterface');
         }
 
-        $env = array_merge((array)getenv(), $_ENV, $_SERVER);
-
         $keysDir = $options['keys_dir'] ?? null;
         $manifest = $options['manifest'] ?? null;
 
-        // Prefer blackcat-config runtime config when available (no env needed).
         if (($keysDir === null || $manifest === null) && class_exists('\\BlackCat\\Config\\Runtime\\Config')) {
             try {
                 /** @phpstan-ignore-next-line optional dependency */
-                $repo = null;
-
-                /** @phpstan-ignore-next-line optional dependency */
-                if (\BlackCat\Config\Runtime\Config::isInitialized()) {
+                if (!\BlackCat\Config\Runtime\Config::isInitialized()) {
                     /** @phpstan-ignore-next-line optional dependency */
-                    $repo = \BlackCat\Config\Runtime\Config::repo();
-                } elseif (\BlackCat\Config\Runtime\Config::tryInitFromFirstAvailableJsonFile()) {
-                    /** @phpstan-ignore-next-line optional dependency */
-                    $repo = \BlackCat\Config\Runtime\Config::repo();
+                    \BlackCat\Config\Runtime\Config::initFromFirstAvailableJsonFileIfNeeded();
                 }
 
-                if ($repo !== null) {
-                    if ($keysDir === null) {
-                        $raw = $repo->get('crypto.keys_dir');
-                        if (is_string($raw) && trim($raw) !== '') {
-                            $keysDir = $raw;
-                        }
-                    }
+                /** @phpstan-ignore-next-line optional dependency */
+                $repo = \BlackCat\Config\Runtime\Config::repo();
 
-                    if ($manifest === null) {
-                        $raw = $repo->get('crypto.manifest');
-                        if (is_string($raw) && trim($raw) !== '') {
-                            $manifest = $raw;
-                        }
+                if ($keysDir === null) {
+                    $raw = $repo->get('crypto.keys_dir');
+                    if (is_string($raw) && trim($raw) !== '') {
+                        $keysDir = $repo->resolvePath($raw);
+                    }
+                }
+
+                if ($manifest === null) {
+                    $raw = $repo->get('crypto.manifest');
+                    if (is_string($raw) && trim($raw) !== '') {
+                        $manifest = $repo->resolvePath($raw);
                     }
                 }
             } catch (\Throwable $e) {
@@ -78,23 +74,34 @@ final class PlatformBootstrap
             }
         }
 
-        $keysDir = $keysDir ?? ($env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null);
-        if (is_string($keysDir) && $keysDir !== '') {
-            $env['BLACKCAT_KEYS_DIR'] = $keysDir;
+        if (!is_string($keysDir) || trim($keysDir) === '') {
+            throw new \RuntimeException('PlatformBootstrap: missing crypto keys_dir (use runtime config crypto.keys_dir or pass keys_dir option).');
+        }
+        $keysDir = trim($keysDir);
+
+        if (!is_string($manifest)) {
+            $manifest = null;
+        }
+        $manifest = $manifest !== null ? trim($manifest) : null;
+        if ($manifest === '') {
+            $manifest = null;
         }
 
-        $manifest = $manifest ?? ($env['BLACKCAT_CRYPTO_MANIFEST'] ?? null);
-        if (is_string($manifest) && $manifest !== '') {
-            $env['BLACKCAT_CRYPTO_MANIFEST'] = $manifest;
-        }
+        $cfg = CryptoConfig::fromArray([
+            'keys_dir' => $keysDir,
+            'manifest' => $manifest,
+            'kms' => $options['kms'] ?? null,
+            'rotation' => $options['rotation'] ?? null,
+            'aead' => $options['aead'] ?? null,
+            'wrap_queue' => $options['wrap_queue'] ?? null,
+        ]);
 
-        $crypto = CryptoManager::boot(CryptoConfig::fromEnv($env), $logger);
+        $crypto = CryptoManager::boot($cfg, $logger);
 
         if (($options['init_core'] ?? true) && class_exists('\\BlackCat\\Core\\Security\\Crypto')) {
-            $keysDirArg = is_string($keysDir) && $keysDir !== '' ? $keysDir : null;
             try {
                 /** @phpstan-ignore-next-line optional dependency */
-                \BlackCat\Core\Security\Crypto::initFromKeyManager($keysDirArg, $logger);
+                \BlackCat\Core\Security\Crypto::initFromKeyManager($keysDir, $logger);
             } catch (\Throwable $e) {
                 if ($strict) {
                     throw $e;
@@ -102,7 +109,7 @@ final class PlatformBootstrap
             }
         }
 
-        if (($options['init_core'] ?? true) && class_exists('\\BlackCat\\Core\\Security\\FileVault') && is_string($keysDir) && $keysDir !== '') {
+        if (($options['init_core'] ?? true) && class_exists('\\BlackCat\\Core\\Security\\FileVault')) {
             try {
                 /** @phpstan-ignore-next-line optional dependency */
                 \BlackCat\Core\Security\FileVault::setKeysDir($keysDir);

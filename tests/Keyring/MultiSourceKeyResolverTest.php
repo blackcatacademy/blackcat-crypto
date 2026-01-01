@@ -10,8 +10,6 @@ use PHPUnit\Framework\TestCase;
 final class MultiSourceKeyResolverTest extends TestCase
 {
     private string $tmpDir;
-    /** @var array<string,string|null> */
-    private array $previousEnv = [];
 
     protected function setUp(): void
     {
@@ -21,23 +19,10 @@ final class MultiSourceKeyResolverTest extends TestCase
         if (!is_dir($this->tmpDir)) {
             mkdir($this->tmpDir, 0770, true);
         }
-
-        $this->previousEnv = [
-            'BC_KEY_CRYPTO_KEY_V3' => getenv('BC_KEY_CRYPTO_KEY_V3') !== false ? (string)getenv('BC_KEY_CRYPTO_KEY_V3') : null,
-        ];
     }
 
     protected function tearDown(): void
     {
-        foreach ($this->previousEnv as $key => $value) {
-            if ($value === null) {
-                putenv($key);
-                unset($_ENV[$key], $_SERVER[$key]);
-                continue;
-            }
-            $this->setEnv($key, $value);
-        }
-
         if (isset($this->tmpDir) && is_dir($this->tmpDir)) {
             foreach (glob($this->tmpDir . '/*') ?: [] as $file) {
                 @unlink($file);
@@ -75,26 +60,6 @@ final class MultiSourceKeyResolverTest extends TestCase
         self::assertSame(['crypto_key_v1.key', 'crypto_key_v2.key'], array_map(static fn($m) => $m->id, $all));
     }
 
-    public function testLoadsEnvKeysAsBase64AndValidatesLength(): void
-    {
-        $slot = KeySlot::fromArray('users.pii', [
-            'type' => 'aead',
-            'key' => 'crypto_key',
-            'length' => 32,
-        ]);
-
-        $bytes = random_bytes(32);
-        $this->setEnv('BC_KEY_CRYPTO_KEY_V3', base64_encode($bytes));
-
-        $resolver = new MultiSourceKeyResolver([
-            ['type' => 'env', 'prefix' => 'BC_KEY_'],
-        ]);
-
-        $mat = $resolver->resolve($slot);
-        self::assertSame('crypto_key_v3.key', $mat->id);
-        self::assertSame($bytes, $mat->bytes);
-    }
-
     public function testDoesNotFallBackToUnrelatedSingleKeyFile(): void
     {
         $slot = KeySlot::fromArray('users.pii', [
@@ -111,12 +76,5 @@ final class MultiSourceKeyResolverTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $resolver->resolve($slot);
-    }
-
-    private function setEnv(string $key, string $value): void
-    {
-        putenv($key . '=' . $value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

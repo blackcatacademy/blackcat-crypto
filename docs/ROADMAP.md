@@ -3,8 +3,8 @@
 This roadmap tracks the evolution of `blackcat/crypto` as the centralized cryptography engine for the BlackCat ecosystem.
 
 ## Stage 1 – Foundations ✅
-- Composer package + autoload; baseline `CryptoManager` and env-based configuration.
-- `KeyRegistry` with pluggable key sources (filesystem + env) and versioned key history.
+- Composer package + autoload; baseline `CryptoManager` and runtime config bootstrap.
+- `KeyRegistry` with filesystem key sources and versioned key history.
 - AEAD implementation (libsodium XChaCha20-Poly1305) with abstractions for future algorithms.
 
 ## Stage 2 – HMAC & slots ✅
@@ -20,13 +20,13 @@ This roadmap tracks the evolution of `blackcat/crypto` as the centralized crypto
 - `WrapQueueInterface` + queue backends + `RotationCoordinator` for asynchronous rewrap.
 
 ## Stage 5 – Quantum-ready abstractions ✅
-- AEAD driver switch (`BLACKCAT_CRYPTO_AEAD=xchacha|hybrid`).
+- AEAD driver switch (runtime config `crypto.aead=xchacha|hybrid`).
 - Rotation policies (`maxAgeSeconds` / `maxWraps`) + scheduling via wrap queue.
 - CLI baseline (`bin/crypto`) + documentation + tests.
 
 ## Stage 6 – PQ ops & advanced CLI ✅
 - Hybrid AEAD placeholder available; CLI tools for inspection/diagnostics (`wrap:status`, `kms:diag`).
-- Rotation policies integrated into CLI/README (`BLACKCAT_CRYPTO_ROTATION`).
+- Rotation policies integrated into runtime config (`crypto.rotation`).
 
 ## Stage 7 – Distributed control-plane hooks ✅
 - SSE / watchdog hooks for monitoring (`telemetry:sse`, `kms:watchdog`).
@@ -34,7 +34,7 @@ This roadmap tracks the evolution of `blackcat/crypto` as the centralized crypto
 
 ## Stage 8 – Production rollout ✅
 - `HttpKmsClient` supports real wrap/unwrap with auth + timeouts.
-- Persistent `FileWrapQueue` via `BLACKCAT_CRYPTO_WRAP_QUEUE`.
+- Persistent `FileWrapQueue` via runtime config (`crypto.wrap_queue`).
 - Metrics exports (`metrics:export`) for JSON/Prometheus/OTel.
 
 ## Stage 9 – Federated governance ✅
@@ -42,7 +42,7 @@ This roadmap tracks the evolution of `blackcat/crypto` as the centralized crypto
 - Core bridge (`BlackCat\Crypto\Bridge\CoreCryptoBridge`) unifies `blackcat-core` crypto with the same slots/keys.
 
 ## Stage 10 – Bootstrap & key standardization ✅
-- `PlatformBootstrap::boot()` provides a one-call bootstrap for other repos (env + optional bridges).
+- `PlatformBootstrap::boot()` provides a one-call bootstrap for other repos (runtime config + optional bridges).
 - Standard key naming: `*_vN.key` (+ optional `*.hex` / `*.b64`).
 - Rotation-safe HMAC patterns with `keyId` and `candidates()`.
 

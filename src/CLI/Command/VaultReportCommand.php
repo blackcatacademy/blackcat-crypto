@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace BlackCat\Crypto\CLI\Command;
 
+use BlackCat\Crypto\Config\CryptoConfig;
+
 final class VaultReportCommand implements CommandInterface
 {
     public function name(): string
@@ -179,7 +181,15 @@ final class VaultReportCommand implements CommandInterface
      */
     private function loadManifest(string $path): array
     {
-        $path = $path ?: (string)getenv('BLACKCAT_CRYPTO_MANIFEST');
+        $path = trim($path);
+        if ($path === '') {
+            try {
+                $cfg = CryptoConfig::fromRuntimeConfig();
+                $path = (string)($cfg->manifestPath() ?? '');
+            } catch (\Throwable) {
+                $path = '';
+            }
+        }
         if ($path === '' || !is_file($path)) {
             return [];
         }

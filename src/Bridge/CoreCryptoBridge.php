@@ -31,21 +31,18 @@ final class CoreCryptoBridge
         'context_prefix' => self::DEFAULT_PREFIX,
         'wrap_queue' => 'memory',
     ];
-    /** @var array<string,mixed> */
-    private static array $envOverrides = [];
 
     /**
      * Configure the bridge (keys dir, logger, KMS endpoints, ...).
      *
      * This call is idempotent: changing options resets the cached manager.
      *
-     * Callers should provide `keys_dir` (or set it via env).
+     * Callers should provide `keys_dir` (or configure it via blackcat-config runtime config).
      */
     /** @param array<string,mixed> $options */
     public static function configure(array $options): void
     {
         self::$options = array_replace(self::$options, $options);
-        self::$envOverrides = array_replace(self::$envOverrides, $options);
         self::$manager = null;
     }
 
@@ -171,13 +168,20 @@ final class CoreCryptoBridge
     private static function manager(): CryptoManager
     {
         if (self::$manager === null) {
-            $baseEnv = array_merge((array)getenv(), $_ENV, $_SERVER);
-            $keysDir = self::resolveKeysDir($baseEnv);
             $options = self::$options;
-            $options['keys_dir'] = $keysDir;
-            self::validateOptions($options);
+            $keysDir = self::resolveKeysDir();
+            $manifest = self::resolveManifestPath();
+            self::assertReadableKeysDir($keysDir);
+            self::assertManifestIsValid($manifest);
 
-            $config = CryptoConfig::fromEnv(array_replace($baseEnv, self::buildEnv($keysDir)));
+            $config = CryptoConfig::fromArray([
+                'keys_dir' => $keysDir,
+                'manifest' => $manifest,
+                'kms' => $options['kms'] ?? null,
+                'rotation' => $options['rotation'] ?? null,
+                'aead' => $options['aead'] ?? null,
+                'wrap_queue' => $options['wrap_queue'] ?? null,
+            ]);
             $logger = self::$options['logger'] ?? null;
             if ($logger !== null && !$logger instanceof LoggerInterface) {
                 throw new \InvalidArgumentException('logger must implement LoggerInterface');
@@ -227,85 +231,74 @@ final class CoreCryptoBridge
         return $prefix . '.' . $normalized;
     }
 
-    /**
-     * Build an env array for {@see CryptoConfig::fromEnv()}.
-     *
-     * @return array<string,string>
-     */
-    private static function buildEnv(string $keysDir): array
-    {
-        $env = [];
-        if ($keysDir !== '') {
-            $env['BLACKCAT_KEYS_DIR'] = $keysDir;
-        }
-
-        if (array_key_exists('kms', self::$envOverrides)) {
-            $json = json_encode(self::$options['kms'] ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            if ($json === false) {
-                throw new \InvalidArgumentException('CoreCryptoBridge kms config must be JSON encodable.');
-            }
-            $env['BLACKCAT_KMS_ENDPOINTS'] = $json;
-        }
-        if (array_key_exists('rotation', self::$envOverrides)) {
-            $json = json_encode(self::$options['rotation'] ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            if ($json === false) {
-                throw new \InvalidArgumentException('CoreCryptoBridge rotation config must be JSON encodable.');
-            }
-            $env['BLACKCAT_CRYPTO_ROTATION'] = $json;
-        }
-        if (array_key_exists('aead', self::$envOverrides)) {
-            $env['BLACKCAT_CRYPTO_AEAD'] = (string)(self::$options['aead'] ?? 'xchacha');
-        }
-        if (array_key_exists('wrap_queue', self::$envOverrides)) {
-            $env['BLACKCAT_CRYPTO_WRAP_QUEUE'] = (string)(self::$options['wrap_queue'] ?? '');
-        }
-        if (array_key_exists('manifest', self::$envOverrides)) {
-            $env['BLACKCAT_CRYPTO_MANIFEST'] = (string)(self::$options['manifest'] ?? '');
-        }
-
-        return $env;
-    }
-
-    /**
-     * Resolve keys directory from explicit options or environment.
-     *
-     * @param array<string,mixed> $env
-     */
-    private static function resolveKeysDir(array $env): string
+    private static function resolveKeysDir(): string
     {
         $opt = self::$options['keys_dir'] ?? null;
-        if (is_string($opt) && $opt !== '') {
-            return $opt;
+        if (is_string($opt) && trim($opt) !== '') {
+            return trim($opt);
         }
 
-        $candidate = $env['BLACKCAT_KEYS_DIR'] ?? $env['APP_KEYS_DIR'] ?? null;
-        return is_string($candidate) ? $candidate : '';
+        if (class_exists('\\BlackCat\\Config\\Runtime\\Config')) {
+            /** @phpstan-ignore-next-line optional dependency */
+            \BlackCat\Config\Runtime\Config::initFromFirstAvailableJsonFileIfNeeded();
+            /** @phpstan-ignore-next-line optional dependency */
+            $repo = \BlackCat\Config\Runtime\Config::repo();
+            $raw = $repo->get('crypto.keys_dir');
+            if (is_string($raw) && trim($raw) !== '') {
+                return $repo->resolvePath($raw);
+            }
+        }
+
+        throw new \RuntimeException('CoreCryptoBridge requires crypto.keys_dir (runtime config) or explicit keys_dir option.');
     }
 
-    /** @param array<string,mixed> $options */
-    private static function validateOptions(array $options): void
+    private static function resolveManifestPath(): ?string
     {
-        $keysDir = (string)($options['keys_dir'] ?? '');
+        $opt = self::$options['manifest'] ?? null;
+        if (is_string($opt) && trim($opt) !== '') {
+            return trim($opt);
+        }
+
+        if (class_exists('\\BlackCat\\Config\\Runtime\\Config')) {
+            /** @phpstan-ignore-next-line optional dependency */
+            \BlackCat\Config\Runtime\Config::initFromFirstAvailableJsonFileIfNeeded();
+            /** @phpstan-ignore-next-line optional dependency */
+            $repo = \BlackCat\Config\Runtime\Config::repo();
+            $raw = $repo->get('crypto.manifest');
+            if (is_string($raw) && trim($raw) !== '') {
+                return $repo->resolvePath($raw);
+            }
+        }
+
+        return null;
+    }
+
+    private static function assertReadableKeysDir(string $keysDir): void
+    {
         if ($keysDir === '' || !is_dir($keysDir) || !is_readable($keysDir)) {
             throw new \InvalidArgumentException('CoreCryptoBridge requires readable keys_dir directory');
         }
+    }
 
-        $manifest = (string)($options['manifest'] ?? '');
-        if ($manifest !== '') {
-            if (!is_file($manifest) || !is_readable($manifest)) {
-                throw new \InvalidArgumentException('CoreCryptoBridge manifest is not readable: ' . $manifest);
-            }
-            $raw = file_get_contents($manifest);
-            if ($raw === false) {
-                throw new \InvalidArgumentException('CoreCryptoBridge failed to read manifest: ' . $manifest);
-            }
-            $decoded = json_decode($raw, true);
-            if (!is_array($decoded)) {
-                throw new \InvalidArgumentException('CoreCryptoBridge manifest must be valid JSON: ' . $manifest);
-            }
-            if (!isset($decoded['slots']) || !is_array($decoded['slots'])) {
-                throw new \InvalidArgumentException('CoreCryptoBridge manifest missing "slots" definition.');
-            }
+    private static function assertManifestIsValid(?string $manifest): void
+    {
+        if (!is_string($manifest) || $manifest === '') {
+            return;
+        }
+
+        if (!is_file($manifest) || !is_readable($manifest)) {
+            throw new \InvalidArgumentException('CoreCryptoBridge manifest is not readable: ' . $manifest);
+        }
+        $raw = file_get_contents($manifest);
+        if ($raw === false) {
+            throw new \InvalidArgumentException('CoreCryptoBridge failed to read manifest: ' . $manifest);
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            throw new \InvalidArgumentException('CoreCryptoBridge manifest must be valid JSON: ' . $manifest);
+        }
+        if (!isset($decoded['slots']) || !is_array($decoded['slots'])) {
+            throw new \InvalidArgumentException('CoreCryptoBridge manifest missing "slots" definition.');
         }
     }
 

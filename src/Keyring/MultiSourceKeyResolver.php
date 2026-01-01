@@ -28,7 +28,7 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
             $found = null;
             foreach ($candidates as $candidate) {
                 if ($candidate->id === $forceKeyId) {
-                    // Keep the last match so source preference (filesystem > env) can win.
+                    // Keep the last match so source preference can win.
                     $found = $candidate;
                 }
             }
@@ -202,77 +202,6 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         return $result;
     }
 
-    /**
-     * @param array<string,mixed> $source
-     * @return list<KeyMaterial>
-     */
-    private function envLoader(KeySlot $slot, array $source): array
-    {
-        $prefix = $source['prefix'] ?? 'BC_KEY_';
-        $keys = [];
-        $expectedLen = $slot->length();
-
-        $keyName = strtoupper($slot->keyName());
-        $variants = array_values(array_unique([
-            $keyName,
-            str_replace(['.', '-'], '_', $keyName),
-            str_replace(['.', '-', '_'], '', $keyName),
-        ]));
-
-        $entries = [];
-        $env = array_merge((array)getenv(), $_ENV, $_SERVER);
-        foreach ($env as $name => $value) {
-            $name = (string)$name;
-            foreach ($variants as $variant) {
-                if ($variant === '') {
-                    continue;
-                }
-
-                $pattern = '~^' . preg_quote($prefix . $variant, '~') . '_V(?P<ver>\\d+)(?:_(?P<enc>HEX|B64|BASE64|RAW))?$~i';
-                if (!preg_match($pattern, $name, $m)) {
-                    continue;
-                }
-
-                $ver = (int)$m['ver'];
-                $bytes = $this->decodeKeyValue((string)$value, $expectedLen, $m['enc'] ?? null);
-                if (!is_string($bytes)) {
-                    $this->logger?->debug('envLoader: invalid key material', [
-                        'slot' => $slot->name(),
-                        'env' => $name,
-                        'version' => $ver,
-                    ]);
-                    continue;
-                }
-
-                $entries[] = [
-                    'version' => $ver,
-                    'env' => $name,
-                    'bytes' => $bytes,
-                ];
-                continue 2;
-            }
-        }
-
-        usort($entries, static fn(array $a, array $b): int => ($a['version'] <=> $b['version']) ?: strcmp((string)$a['env'], (string)$b['env']));
-
-        $seenVersions = [];
-        foreach ($entries as $e) {
-            $ver = (int)$e['version'];
-            if ($ver < 1 || isset($seenVersions[$ver])) {
-                continue;
-            }
-            $seenVersions[$ver] = true;
-            $keys[] = new KeyMaterial(
-                id: self::canonicalKeyId($slot, $ver),
-                bytes: (string)$e['bytes'],
-                slot: $slot->name(),
-                metadata: ['source' => 'env', 'env' => (string)$e['env'], 'version' => $ver],
-            );
-        }
-
-        return $keys;
-    }
-
     private static function canonicalKeyId(KeySlot $slot, int $version): string
     {
         $name = strtolower($slot->keyName());
@@ -307,8 +236,7 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         $source = $mat->metadata['source'] ?? null;
         $source = is_string($source) ? strtolower($source) : '';
         return match ($source) {
-            'env' => 0,
-            'filesystem' => 1,
+            'filesystem' => 0,
             default => 50,
         };
     }
@@ -357,47 +285,5 @@ final class MultiSourceKeyResolver implements KeyResolverInterface
         }
 
         return null;
-    }
-
-    private function decodeKeyValue(string $value, int $expectedLen, ?string $encHint): ?string
-    {
-        $v = trim($value);
-        if ($v === '') {
-            return null;
-        }
-
-        $hint = strtoupper((string)$encHint);
-        if ($hint === 'HEX') {
-            $txt = preg_replace('~\\s+~', '', $v) ?? '';
-            if ($txt === '' || (strlen($txt) % 2) !== 0 || !ctype_xdigit($txt)) {
-                return null;
-            }
-            $bytes = @hex2bin($txt);
-            return ($bytes !== false && strlen($bytes) === $expectedLen) ? $bytes : null;
-        }
-        if ($hint === 'B64' || $hint === 'BASE64') {
-            $txt = preg_replace('~\\s+~', '', $v) ?? '';
-            $bytes = base64_decode($txt, true);
-            return ($bytes !== false && strlen($bytes) === $expectedLen) ? $bytes : null;
-        }
-        if ($hint === 'RAW') {
-            return (strlen($v) === $expectedLen) ? $v : null;
-        }
-
-        // Auto-detect (prefer exact-length hex, then base64).
-        $collapsed = preg_replace('~\\s+~', '', $v) ?? '';
-        if ($collapsed !== '' && ctype_xdigit($collapsed) && strlen($collapsed) === $expectedLen * 2) {
-            $bytes = @hex2bin($collapsed);
-            if ($bytes !== false && strlen($bytes) === $expectedLen) {
-                return $bytes;
-            }
-        }
-
-        $b64 = base64_decode($collapsed, true);
-        if ($b64 !== false && strlen($b64) === $expectedLen) {
-            return $b64;
-        }
-
-        return (strlen($v) === $expectedLen) ? $v : null;
     }
 }

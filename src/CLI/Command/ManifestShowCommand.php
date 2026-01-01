@@ -20,7 +20,6 @@ final class ManifestShowCommand implements CommandInterface
     /** @param list<string> $args */
     public function run(array $args): int
     {
-        $env = $_ENV + $_SERVER;
         $manifestOverride = null;
         $outputPath = null;
         foreach ($args as $arg) {
@@ -34,15 +33,38 @@ final class ManifestShowCommand implements CommandInterface
             }
         }
 
-        if ($manifestOverride) {
-            $env['BLACKCAT_CRYPTO_MANIFEST'] = $manifestOverride;
+        $manifestPath = null;
+        if (is_string($manifestOverride) && trim($manifestOverride) !== '') {
+            $manifestPath = trim($manifestOverride);
+        } else {
+            try {
+                $cfg = CryptoConfig::fromRuntimeConfig();
+                $manifestPath = $cfg->manifestPath();
+            } catch (\Throwable) {
+                $manifestPath = null;
+            }
         }
 
-        $config = CryptoConfig::fromEnv($env);
+        if (!is_string($manifestPath) || $manifestPath === '' || !is_file($manifestPath)) {
+            fwrite(STDERR, "Manifest not found. Provide --manifest=path or set runtime config crypto.manifest.\n");
+            return 1;
+        }
+
+        $raw = file_get_contents($manifestPath);
+        if ($raw === false) {
+            fwrite(STDERR, "Failed to read manifest: {$manifestPath}\n");
+            return 1;
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            fwrite(STDERR, "Manifest is not valid JSON: {$manifestPath}\n");
+            return 1;
+        }
+
         $payload = [
-            'manifest' => $config->manifestPath(),
-            'slots' => $config->slots(),
-            'rotation' => $config->rotationPolicies(),
+            'manifest' => $manifestPath,
+            'slots' => is_array($decoded['slots'] ?? null) ? $decoded['slots'] : [],
+            'rotation' => is_array($decoded['rotation'] ?? null) ? $decoded['rotation'] : [],
         ];
 
         $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;

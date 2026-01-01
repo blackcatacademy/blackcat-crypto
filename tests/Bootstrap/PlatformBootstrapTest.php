@@ -10,18 +10,10 @@ final class PlatformBootstrapTest extends TestCase
 {
     private string $keysDir;
     private string $manifestPath;
-    /** @var array<string,string|null> */
-    private array $previousEnv = [];
 
     protected function setUp(): void
     {
         parent::setUp();
-
-        $this->previousEnv = [
-            'BLACKCAT_KEYS_DIR' => getenv('BLACKCAT_KEYS_DIR') !== false ? (string)getenv('BLACKCAT_KEYS_DIR') : null,
-            'APP_KEYS_DIR' => getenv('APP_KEYS_DIR') !== false ? (string)getenv('APP_KEYS_DIR') : null,
-            'BLACKCAT_CRYPTO_MANIFEST' => getenv('BLACKCAT_CRYPTO_MANIFEST') !== false ? (string)getenv('BLACKCAT_CRYPTO_MANIFEST') : null,
-        ];
 
         $this->keysDir = sys_get_temp_dir() . '/blackcat-bootstrap-' . bin2hex(random_bytes(4));
         if (!is_dir($this->keysDir)) {
@@ -37,15 +29,10 @@ final class PlatformBootstrapTest extends TestCase
             ],
         ];
         file_put_contents($this->manifestPath, json_encode($manifest));
-
-        $this->setEnv('BLACKCAT_KEYS_DIR', $this->keysDir);
-        $this->setEnv('BLACKCAT_CRYPTO_MANIFEST', $this->manifestPath);
     }
 
     protected function tearDown(): void
     {
-        $this->restoreEnv();
-
         if (isset($this->keysDir) && is_dir($this->keysDir)) {
             foreach (glob($this->keysDir . '/*') ?: [] as $file) {
                 @unlink($file);
@@ -59,9 +46,11 @@ final class PlatformBootstrapTest extends TestCase
         parent::tearDown();
     }
 
-    public function testBootsCryptoManagerFromEnv(): void
+    public function testBootsCryptoManagerFromExplicitOptions(): void
     {
         $crypto = PlatformBootstrap::boot([
+            'keys_dir' => $this->keysDir,
+            'manifest' => $this->manifestPath,
             'init_core' => false,
             'init_database' => false,
         ]);
@@ -71,24 +60,4 @@ final class PlatformBootstrapTest extends TestCase
 
         self::assertSame('secret', $plain);
     }
-
-    private function setEnv(string $key, string $value): void
-    {
-        putenv($key . '=' . $value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
-    }
-
-    private function restoreEnv(): void
-    {
-        foreach ($this->previousEnv as $key => $value) {
-            if ($value === null) {
-                putenv($key);
-                unset($_ENV[$key], $_SERVER[$key]);
-                continue;
-            }
-            $this->setEnv($key, $value);
-        }
-    }
 }
-

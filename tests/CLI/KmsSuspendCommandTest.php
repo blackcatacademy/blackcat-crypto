@@ -9,28 +9,18 @@ use Psr\Log\NullLogger;
 
 final class KmsSuspendCommandTest extends TestCase
 {
-    private string $envBackup = '';
-
-    protected function setUp(): void
-    {
-        $this->envBackup = getenv('BLACKCAT_KMS_ENDPOINTS') ?: '';
-        putenv('BLACKCAT_KMS_ENDPOINTS=a=http://localhost:7001');
-    }
-
-    protected function tearDown(): void
-    {
-        putenv('BLACKCAT_KMS_ENDPOINTS=' . $this->envBackup);
-    }
-
     public function testSuspendsClient(): void
     {
+        [$configPath, $tmpDir] = $this->makeRuntimeConfig('a=http://localhost:7001');
         $cmd = new KmsSuspendCommand(new NullLogger());
         ob_start();
-        $code = $cmd->run(['a', '5']);
+        $code = $cmd->run(['--config=' . $configPath, 'a', '5']);
         $out = ob_get_clean();
 
         self::assertSame(0, $code);
         self::assertStringContainsString('Suspended a for 5s', $out);
+
+        $this->cleanupTmp($tmpDir);
     }
 
     public function testFailsWithBadArgs(): void
@@ -41,5 +31,49 @@ final class KmsSuspendCommandTest extends TestCase
         ob_end_clean();
 
         self::assertSame(1, $code);
+    }
+
+    /**
+     * @return array{0:string,1:string}
+     */
+    private function makeRuntimeConfig(string $kmsEndpoints): array
+    {
+        $tmpDir = sys_get_temp_dir() . '/bcat-kms-' . bin2hex(random_bytes(4));
+        @mkdir($tmpDir, 0700, true);
+        @chmod($tmpDir, 0700);
+
+        $keysDir = $tmpDir . '/keys';
+        @mkdir($keysDir, 0700, true);
+        @chmod($keysDir, 0700);
+        file_put_contents($keysDir . '/dummy_v1.key', random_bytes(32));
+
+        $cfg = [
+            'crypto' => [
+                'keys_dir' => $keysDir,
+                'kms_endpoints' => $kmsEndpoints,
+            ],
+        ];
+
+        $path = $tmpDir . '/config.runtime.json';
+        file_put_contents($path, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        @chmod($path, 0600);
+
+        return [$path, $tmpDir];
+    }
+
+    private function cleanupTmp(string $tmpDir): void
+    {
+        if (!is_dir($tmpDir)) {
+            return;
+        }
+
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($tmpDir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($files as $file) {
+            $file->isDir() ? @rmdir($file->getRealPath()) : @unlink($file->getRealPath());
+        }
+        @rmdir($tmpDir);
     }
 }
